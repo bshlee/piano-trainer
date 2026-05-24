@@ -175,9 +175,19 @@ function buildPiano() {
   }
 }
 
-// ---------- audio (Web Audio API, lazy-init on first user gesture) ----------
+// ---------- audio (Web Audio API) ----------
+//
+// iOS quirk: AudioContext starts suspended and stays muted until "unlocked"
+// inside a user gesture by playing a tiny silent buffer. If we only create
+// the context when the user taps a piano key, the first tap is silent
+// because resume() is async and the oscillator gets scheduled before the
+// context is actually running. Workaround: unlock on the very first
+// interaction anywhere on the page (any touch / click / key) so by the time
+// a piano key is tapped, audio already flows.
 
 let audioCtx = null;
+let audioUnlocked = false;
+
 function getAudioCtx() {
   if (!audioCtx) {
     const Ctor = window.AudioContext || window.webkitAudioContext;
@@ -187,6 +197,23 @@ function getAudioCtx() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
 }
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  // Play a 1-sample silent buffer to flip iOS's audio gate.
+  const buf = ctx.createBuffer(1, 1, 22050);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start(0);
+  audioUnlocked = true;
+}
+
+['touchstart', 'touchend', 'mousedown', 'click', 'keydown'].forEach(ev => {
+  window.addEventListener(ev, unlockAudio, { once: false, passive: true, capture: true });
+});
 
 // Sine-partial additive synthesis with a hammer-strike noise burst.
 // Each partial has its own amplitude + decay so higher harmonics fade first,
@@ -207,7 +234,9 @@ function playMidi(midi) {
   const ctx = getAudioCtx();
   if (!ctx) return;
   const f0 = 440 * Math.pow(2, (midi - 69) / 12);
-  const t0 = ctx.currentTime;
+  // Schedule a few ms in the future so the audio thread has time to
+  // pick up the events even if the context just resumed.
+  const t0 = ctx.currentTime + 0.01;
 
   // Real pianos: higher notes decay faster. Halve the decay every 2 octaves above C4.
   const pitchDecay = Math.pow(0.5, (midi - 60) / 24);
@@ -274,9 +303,9 @@ function loadSettings() {
     return {
       clefMode: s.clefMode || 'treble',
       accidentalRate: typeof s.accidentalRate === 'number' ? s.accidentalRate : 0.30,
-      showLabels: typeof s.showLabels === 'boolean' ? s.showLabels : true,
+      showLabels: typeof s.showLabels === 'boolean' ? s.showLabels : false,
     };
-  } catch { return { clefMode: 'treble', accidentalRate: 0.30, showLabels: true }; }
+  } catch { return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false }; }
 }
 function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
