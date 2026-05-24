@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1a1a2e">
+<title>Sheet Music Trainer</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --panel: #232342;
+    --ink: #f4f4f8;
+    --muted: #9aa0c0;
+    --accent: #7b8cff;
+    --correct: #4ade80;
+    --wrong: #f87171;
+    --white-key: #f8f8fb;
+    --white-key-active: #d8dcff;
+    --black-key: #2a2a3e;
+    --black-key-active: #5560a8;
+    --key-border: #1a1a2e;
+    --shadow: 0 2px 8px rgba(0,0,0,0.25);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  .app {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 14px;
+  }
+
+  /* --- top bar --- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .clef-toggle {
+    display: flex;
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 4px;
+    box-shadow: var(--shadow);
+  }
+  .clef-toggle button {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .clef-toggle button.on {
+    background: var(--accent);
+    color: white;
+  }
+  /* --- staff --- */
+  .staff-wrap {
+    background: var(--white-key);
+    border-radius: 14px;
+    padding: 18px 10px 8px;
+    box-shadow: var(--shadow);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 200px;
+    position: relative;
+    transition: background-color 200ms ease;
+  }
+  .staff-wrap.correct { background: #d6f5d6; }
+  .staff-wrap.wrong { background: #fbd6d6; }
+  .staff-wrap svg { display: block; max-width: 100%; height: auto; }
+  .feedback {
+    position: absolute;
+    bottom: 6px;
+    left: 0; right: 0;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #444;
+    min-height: 18px;
+    pointer-events: none;
+  }
+  .feedback.correct { color: #1e7a32; }
+  .feedback.wrong { color: #a02020; }
+
+  /* --- input --- */
+  .input-row {
+    display: flex;
+    gap: 8px;
+  }
+  .input-row input {
+    flex: 1;
+    font: inherit;
+    font-size: 18px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background: var(--panel);
+    color: var(--ink);
+    outline: none;
+    min-width: 0;
+  }
+  .input-row input:focus {
+    border-color: var(--accent);
+  }
+  .input-row button {
+    border: 0;
+    background: var(--accent);
+    color: white;
+    font: inherit;
+    font-weight: 700;
+    padding: 0 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  /* --- piano --- */
+  .piano {
+    position: relative;
+    height: 160px;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  .piano .row {
+    display: flex;
+    height: 100%;
+    gap: 2px;
+  }
+  .white {
+    flex: 1;
+    background: var(--white-key);
+    border-radius: 0 0 8px 8px;
+    border: 1px solid var(--key-border);
+    border-top: 0;
+    position: relative;
+    cursor: pointer;
+    font: inherit;
+    color: #333;
+    font-weight: 600;
+    padding: 0 0 10px 0;
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+    box-shadow: inset 0 -4px 6px rgba(0,0,0,0.06);
+    transition: background 80ms;
+  }
+  .white:active, .white.flash {
+    background: var(--white-key-active);
+  }
+  .piano.no-labels .white .label { visibility: hidden; }
+  .white .label {
+    line-height: 1.1;
+    pointer-events: none;
+    text-align: center;
+  }
+  .white .label .ko {
+    display: block;
+    color: #333;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .white .label .en {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+  }
+  /* Black keys overlay */
+  .black-row {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 62%;
+    pointer-events: none;
+  }
+  .black {
+    position: absolute;
+    width: 9%;
+    height: 100%;
+    background: var(--black-key);
+    border-radius: 0 0 6px 6px;
+    border: 1px solid var(--key-border);
+    border-top: 0;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: inset 0 -4px 6px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3);
+    transition: background 80ms;
+  }
+  .black:active, .black.flash {
+    background: var(--black-key-active);
+  }
+
+  /* --- score --- */
+  .score {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: 14px;
+    color: var(--muted);
+    padding: 4px 4px 0;
+  }
+  .score b { color: var(--ink); font-weight: 700; }
+  .score .reset {
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+
+  /* --- settings panel --- */
+  details.settings {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  details.settings summary {
+    cursor: pointer;
+    color: var(--ink);
+    font-weight: 600;
+    list-style: none;
+  }
+  details.settings summary::-webkit-details-marker { display: none; }
+  details.settings .row {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  details.settings input[type=range] { flex: 1; }
+
+  @media (max-width: 380px) {
+    .clef-toggle button { padding: 8px 10px; font-size: 14px; }
+    .piano { height: 140px; }
+    .white .label .en { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+
+    <div class="topbar">
+      <div class="clef-toggle" id="clef-toggle" role="group" aria-label="Clef mode">
+        <button data-clef="treble" class="on">Treble</button>
+        <button data-clef="bass">Bass</button>
+        <button data-clef="both">Both</button>
+      </div>
+    </div>
+
+    <div class="staff-wrap" id="staff-wrap">
+      <div id="staff"></div>
+      <div class="feedback" id="feedback"></div>
+    </div>
+
+    <div class="input-row">
+      <input
+        id="answer"
+        type="text"
+        inputmode="text"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        aria-label="Note answer">
+      <button id="submit">Submit</button>
+    </div>
+
+    <div class="piano" id="piano" aria-label="One octave piano">
+      <div class="row" id="white-row"></div>
+      <div class="black-row" id="black-row"></div>
+    </div>
+
+    <div class="score">
+      <span>Score: <b id="score">0</b> / <b id="total">0</b></span>
+      <span>Streak: <b id="streak">0</b> &nbsp; Best: <b id="best">0</b></span>
+      <button class="reset" id="reset">reset</button>
+    </div>
+
+    <details class="settings">
+      <summary>Settings</summary>
+      <div class="row">
+        <label for="accidental-rate" style="min-width: 110px;">Accidentals</label>
+        <input type="range" id="accidental-rate" min="0" max="100" step="5" value="30">
+        <span id="accidental-rate-val" style="min-width:40px; text-align:right;">30%</span>
+      </div>
+      <div class="row">
+        <label for="show-labels" style="min-width: 110px;">Key labels</label>
+        <input type="checkbox" id="show-labels" checked>
+        <span style="font-size:12px;">Show 도/C on piano keys</span>
+      </div>
+      <p style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
+        Pitch-class only: octave doesn't matter. Enharmonic spellings (e.g. C# / Db) are both accepted.
+      </p>
+    </details>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.3/build/cjs/vexflow.js"></script>
+  <script src="./render.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
