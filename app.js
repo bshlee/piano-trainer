@@ -124,6 +124,10 @@ const accSlider = document.getElementById('accidental-rate');
 const showLabelsCheckbox = document.getElementById('show-labels');
 const pianoEl = document.getElementById('piano');
 const accSliderVal = document.getElementById('accidental-rate-val');
+const distPanel = document.getElementById('distribution-panel');
+const distSummary = document.getElementById('dist-summary');
+const distChart = document.getElementById('dist-chart');
+const distResetBtn = document.getElementById('dist-reset');
 
 // ---------- piano keyboard ----------
 
@@ -291,9 +295,11 @@ function handleKey(pc, midi, btnEl) {
 
 const SETTINGS_KEY = 'piano-trainer:settings:v1';
 const STATS_KEY = 'piano-trainer:stats:v1';
+const DIST_KEY = 'piano-trainer:dist:v1';
 
 const settings = loadSettings();
 const stats = loadStats();
+const distribution = loadDistribution();
 let currentPitch = null;
 let locked = false; // briefly true between answer and next question
 
@@ -325,6 +331,43 @@ function saveStats() {
   localStorage.setItem(STATS_KEY, JSON.stringify(stats));
 }
 
+function emptyDistribution() {
+  const byNote = {};
+  for (const clef of ['treble', 'bass']) {
+    for (const n of DIATONIC[clef]) byNote[`${clef}:${n.step}${n.octave}`] = 0;
+  }
+  return { byNote, naturals: 0, sharps: 0, flats: 0, treble: 0, bass: 0, total: 0 };
+}
+function loadDistribution() {
+  try {
+    const s = JSON.parse(localStorage.getItem(DIST_KEY) || 'null');
+    if (!s) return emptyDistribution();
+    const base = emptyDistribution();
+    if (s.byNote) for (const k in s.byNote) if (k in base.byNote) base.byNote[k] = s.byNote[k] || 0;
+    base.naturals = s.naturals || 0;
+    base.sharps = s.sharps || 0;
+    base.flats = s.flats || 0;
+    base.treble = s.treble || 0;
+    base.bass = s.bass || 0;
+    base.total = s.total || 0;
+    return base;
+  } catch { return emptyDistribution(); }
+}
+function saveDistribution() {
+  localStorage.setItem(DIST_KEY, JSON.stringify(distribution));
+}
+function recordPitch(p) {
+  const key = `${p.clef}:${p.step}${p.octave}`;
+  distribution.byNote[key] = (distribution.byNote[key] || 0) + 1;
+  if (p.alter === 1) distribution.sharps++;
+  else if (p.alter === -1) distribution.flats++;
+  else distribution.naturals++;
+  distribution[p.clef]++;
+  distribution.total++;
+  saveDistribution();
+  if (distPanel.open) renderDistribution();
+}
+
 function renderStats() {
   scoreEl.textContent = stats.correct;
   totalEl.textContent = stats.total;
@@ -339,6 +382,7 @@ function newQuestion() {
   staffWrap.classList.remove('correct','wrong');
   answerInput.value = '';
   currentPitch = randomPitch(settings.clefMode, settings.accidentalRate);
+  recordPitch(currentPitch);
   renderNote(staffEl, currentPitch);
   // Don't auto-focus on mobile (would pop keyboard). Focus only if no touch capability detected.
   if (!('ontouchstart' in window)) answerInput.focus();
@@ -390,6 +434,48 @@ function judge(answerPc) {
   setTimeout(newQuestion, ok ? 600 : 1200);
 }
 
+function renderDistribution() {
+  const total = distribution.total;
+  if (total === 0) {
+    distSummary.textContent = 'No data yet — play some notes.';
+    distChart.innerHTML = '';
+    return;
+  }
+  const accPct = ((distribution.sharps + distribution.flats) / total * 100).toFixed(1);
+  distSummary.innerHTML =
+    `Total: <b>${total}</b> &nbsp;•&nbsp; ` +
+    `Treble: <b>${distribution.treble}</b> &nbsp; Bass: <b>${distribution.bass}</b><br>` +
+    `Naturals: <b>${distribution.naturals}</b> &nbsp; ` +
+    `♯: <b>${distribution.sharps}</b> &nbsp; ♭: <b>${distribution.flats}</b> ` +
+    `<span style="color:var(--muted)">(${accPct}% accidentals)</span>`;
+
+  const parts = [];
+  for (const clef of ['treble', 'bass']) {
+    const entries = DIATONIC[clef].map(n => ({
+      label: `${n.step}${n.octave}`,
+      count: distribution.byNote[`${clef}:${n.step}${n.octave}`] || 0,
+    }));
+    const clefTotal = entries.reduce((s, e) => s + e.count, 0);
+    if (clefTotal === 0) continue;
+    const max = Math.max(...entries.map(e => e.count));
+    const expectedPct = max > 0 ? (clefTotal / entries.length) / max * 100 : 0;
+    parts.push(`<div class="dist-clef">${clef === 'treble' ? 'Treble' : 'Bass'} (${clefTotal})</div>`);
+    for (const e of entries) {
+      const pct = max > 0 ? (e.count / max) * 100 : 0;
+      parts.push(
+        `<div class="hist-row">` +
+          `<span class="hist-label">${e.label}</span>` +
+          `<span class="hist-bar" style="--expected-pct:${expectedPct.toFixed(2)}%">` +
+            `<span class="hist-fill" style="width:${pct.toFixed(2)}%"></span>` +
+          `</span>` +
+          `<span class="hist-count">${e.count}</span>` +
+        `</div>`
+      );
+    }
+  }
+  distChart.innerHTML = parts.join('');
+}
+
 function describePitch(p) {
   const western = p.step + (p.alter === 1 ? '♯' : p.alter === -1 ? '♭' : '');
   const ko = LETTER_TO_KO[p.step] + (p.alter === 1 ? '♯' : p.alter === -1 ? '♭' : '');
@@ -436,6 +522,22 @@ showLabelsCheckbox.addEventListener('change', () => {
 function applyShowLabels() {
   pianoEl.classList.toggle('no-labels', !settings.showLabels);
 }
+
+distPanel.addEventListener('toggle', () => {
+  if (distPanel.open) renderDistribution();
+});
+distResetBtn.addEventListener('click', () => {
+  const fresh = emptyDistribution();
+  distribution.byNote = fresh.byNote;
+  distribution.naturals = 0;
+  distribution.sharps = 0;
+  distribution.flats = 0;
+  distribution.treble = 0;
+  distribution.bass = 0;
+  distribution.total = 0;
+  saveDistribution();
+  renderDistribution();
+});
 
 resetBtn.addEventListener('click', () => {
   stats.correct = 0;

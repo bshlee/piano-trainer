@@ -267,6 +267,75 @@
   }
   details.settings input[type=range] { flex: 1; }
 
+  /* --- distribution panel --- */
+  .dist-summary {
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .dist-chart { margin-top: 8px; }
+  .dist-clef {
+    margin-top: 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .hist-row {
+    display: grid;
+    grid-template-columns: 34px 1fr 28px;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    margin: 3px 0;
+    color: var(--ink);
+  }
+  .hist-label {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  .hist-bar {
+    position: relative;
+    height: 10px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: visible;
+  }
+  .hist-bar::after {
+    /* expected-value marker (uniform random) */
+    content: '';
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    left: var(--expected-pct, 100%);
+    width: 1px;
+    background: rgba(255,255,255,0.35);
+    pointer-events: none;
+  }
+  .hist-fill {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 200ms ease;
+  }
+  .hist-count {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  .dist-reset {
+    margin-top: 12px;
+    background: transparent;
+    border: 1px solid var(--muted);
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
   @media (max-width: 380px) {
     .clef-toggle button { padding: 8px 10px; font-size: 14px; }
     .piano { height: 140px; }
@@ -328,6 +397,16 @@
       </div>
       <p style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
         Pitch-class only: octave doesn't matter. Enharmonic spellings (e.g. C# / Db) are both accepted.
+      </p>
+    </details>
+
+    <details class="settings" id="distribution-panel">
+      <summary>Note distribution</summary>
+      <div class="dist-summary" id="dist-summary">No data yet.</div>
+      <div class="dist-chart" id="dist-chart"></div>
+      <button type="button" class="dist-reset" id="dist-reset">Reset distribution</button>
+      <p style="margin: 8px 0 0; font-size: 11px; line-height: 1.5;">
+        Vertical line = expected count if perfectly uniform. The further the bars deviate from it, the less uniform the draws have been.
       </p>
     </details>
 
