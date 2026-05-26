@@ -17,7 +17,7 @@ Live at **https://bshlee.github.io/piano-trainer/** (GitHub Pages, deploys from 
 | File | Role |
 |---|---|
 | `index.html` | Markup, inline `<style>`, script tags. Loads VexFlow from `cdn.jsdelivr.net`. Hosts the mode-picker overlay and both mode sections (`#read-note`, `#find-note`). |
-| `render.js`  | `window.renderNote(container, pitch)` draws clef + one note. `window.renderClefOnly(container, clef)` draws an empty staff with just the clef. `window.renderFindStaff(container, clef, pitches, marks)` draws a 170-px-tall staff with N notes (whole notes, tight horizontal clustering — ~70 px/note). Marks drive feedback colors: `'correct'` (green), `'wrong'` (red), `'miss'` (ghost-green; added to the voice even if not in `pitches`). Returns `{bottomLineY, stepPx, svgWidth, svgHeight, noteXs}` — the caller maps click Y → diatonic step, and `noteXs[midi]` lets the drag preview align horizontally with the note being modified. |
+| `render.js`  | `window.renderNote(container, pitch)` draws clef + one note. `window.renderClefOnly(container, clef)` draws an empty staff with just the clef. `window.renderFindStaff(container, clef, pitches, marks)` draws a 200-px-tall staff with N notes (whole notes, displayed width capped at 480 px, centered via `.find-staff svg { margin: 0 auto }`). Marks drive feedback colors: `'correct'` (green), `'wrong'` (red), `'miss'` (ghost-green; added to the voice even if not in `pitches`). Internally calls `ctx.scale(SCALE, SCALE)` with `SCALE = 1.3` so glyphs and line spacing render 30% bigger — see the "Rendering & coordinate system" section below. Returns `{bottomLineY, stepPx, svgWidth, svgHeight, noteXs}` in **SVG-canvas (post-scale) units** so the caller can use them directly against click coords. |
 | `app.js`     | Shared infrastructure + Read Note mode: pitch utils, piano UI (`buildPiano(range)`), Web Audio synth, persistence, distribution stats, mode picker, mode dispatch. Exposes `window.PT_Audio`, `PT_Pitch`, `PT_Piano`, `PT_Settings`. |
 | `mode-find.js` | Find Note mode: prompts a natural note, computes target MIDIs in the clef's range, listens for pointer events on the staff SVG (pointerdown → preview marker → pointerup → toggle), submits/judges, manages the Submit↔Next button swap. Exposes `window.PT_FindNote`. |
 | `README.md`  | Human-facing docs (features, usage, dev setup). |
@@ -53,7 +53,7 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 
 ### Find Note mode
 - Prompt is a natural note name (default 도, toggle to `C` in Settings). Naturals only — accidentals deliberately excluded.
-- Task: **tap the staff** at every position matching that pitch class within the clef's range. Click Y snaps to the nearest line/space (5 px per diatonic step, VexFlow default). Counter shows `placed / target`.
+- Task: **tap the staff** at every position matching that pitch class within the clef's range. Click Y snaps to the nearest line/space — internally 5 px per diatonic step (VexFlow default), so 6.5 displayed px at `SCALE = 1.3`. Counter shows `placed / target`.
 - **Piano keyboard is hidden** in this mode (`body[data-mode="find"] #piano { display: none }`). The drill is reading staff positions, not finding piano keys.
 - **`.score` and `#distribution-panel` are also hidden** in Find Note — they only track Read Note rounds and would mislead.
 - **Clef ranges** (extend a few ledger lines beyond the staff so users practice ledger-line reading):
@@ -63,7 +63,7 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 
 **Placement UX — drag-to-place with snap preview** (not pure tap):
 - `pointerdown` on the staff → a colored preview marker (small oval) appears at the snapped Y.
-- `pointermove` → the marker follows the finger, snapping step-by-step. Marker turns red when hovering an already-placed note (= "release to remove") *only when no note is being carried*.
+- `pointermove` → the marker jumps **discretely** from one diatonic position to the next (no CSS transition on `top` — the smooth glide was removed deliberately because it felt freeflowing). Marker turns red when hovering an already-placed note (= "release to remove") *only when no note is being carried*.
 - The original placed note stays visible throughout the drag — it's never removed mid-gesture. The preview oval anchors its X to the original note (via `staffRef.noteXs[originMidi]` returned from `renderFindStaff`), so the user sees "this preview is the modification of that note." Only Y changes as the finger moves up/down.
 - `pointerup` → commit. The behavior depends on whether the snap ever changed during the gesture:
   - **Stationary tap** (snap never moved): toggle the tapped pitch — add if empty, remove if already placed. Preserves the original tap-to-toggle.
@@ -87,6 +87,24 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 - Full-screen overlay shown on **first launch only** (when `settings.mode` is null). After that, the app boots into the saved mode.
 - Topbar **Mode chip** (`Mode: Read ▾`) reopens the picker on demand.
 - Clef toggle is shared by both modes.
+
+## Rendering & coordinate system (Find Note staff)
+
+`renderFindStaff` applies `ctx.scale(SCALE, SCALE)` to the VexFlow SVG context, with `SCALE = 1.3`. This makes every glyph (clef, note heads, ledger lines, staff lines) render 30% larger than VexFlow's native units. Three coordinate spaces are at play — keep them straight when modifying rendering or click math:
+
+- **Internal coords (pre-scale)** — what VexFlow APIs accept and return: `stave.getYForLine(n)`, `note.getAbsoluteX()`, `Formatter.format(voice, width)`, the `x/y/width` arguments to `new VF.Stave(...)`. Everything passed to or returned from VexFlow is in this space.
+- **SVG-canvas coords (post-scale)** — the SVG's viewport coordinate system. Equals internal × `SCALE`. This is what the SVG attribute `width="W"` and `height="H"` (set by `renderer.resize(W, H)`) refer to.
+- **CSS pixels** — what `e.clientY`, `getBoundingClientRect()`, and `style.top/left` deal with in the DOM. Equals SVG-canvas if the SVG isn't CSS-scaled (i.e. container is wide enough that `max-width: 100%` doesn't shrink it). In the normal layout this is always the case because we cap intrinsic width at the parent's available width.
+
+**Conversion rules used in the code**:
+- Inside `renderFindStaff`: divide displayed targets by `SCALE` before handing to VexFlow (e.g. `staveTopY = 60 / SCALE` to place the stave at displayed Y=60). Multiply VexFlow's outputs by `SCALE` before returning (`bottomLineY: stave.getYForLine(4) * SCALE`, `stepPx: 5 * SCALE`, `noteXs[midi] = (note.getAbsoluteX() + 7) * SCALE`). The `+7` is half a whole-note head in *internal* units.
+- In `mode-find.js`: `staffRef.bottomLineY`/`stepPx`/`noteXs` are in SVG-canvas coords. Click handlers convert CSS px → canvas coords via `clickY / (svgRect.height / staffRef.svgHeight)` — a defensive scale factor that is 1 in the normal layout but stays correct if the SVG ever gets CSS-shrunk. `showPreviewAtMidi` does the same on both axes.
+
+**If you change `SCALE`**: nothing in `mode-find.js` should need changing — it operates entirely in canvas coords. Inside `renderFindStaff` you may want to revisit `staveTopY = 60 / SCALE` (room above stave for high ledger notes), the `height = 200` value (room below for low ledger notes), and the `formatWidth = items.length * 70 + 40` clustering (in internal units → display ≈ value × `SCALE`).
+
+**Other layout knobs**:
+- The displayed staff width is capped at 480 px by `Math.min(Math.max(parentW - 16, 280), 480)`. On wide screens the SVG is left at 480 wide and centered via `margin: 0 auto`. On phones it fills the parent width.
+- One diatonic step is 5 internal units = 6.5 displayed px. The preview marker (`.find-preview`, 22×16) snaps discretely — there is **no CSS transition** on `top`, by design, so the user sees a clean step-by-step jump rather than a smooth glide.
 
 ## localStorage keys
 

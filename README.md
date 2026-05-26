@@ -23,11 +23,12 @@ First launch shows a mode picker; pick once and it sticks. The topbar **Mode chi
 ### Find Note — given a note name, find every occurrence on the staff
 - Prompt is a Korean syllable (`도`, `레`, …) by default; toggleable to English (`C`, `D`, …) in Settings.
 - **Drag-to-place**: press anywhere on the staff, slide your finger up/down to scrub through diatonic positions (snap to nearest line/space, with ledger lines auto-drawn for off-staff notes), release to commit. A quick tap also works for confident placements.
+- **Drag-to-move**: press a placed note and drag — the original note stays visible, a blue preview oval (aligned with that note's column) follows the snap position. Release on empty = move; release on origin or on another placed note = no-op (move canceled).
 - The preview marker turns red when hovering an already-placed note → release to remove.
 - Counter shows `placed / target` so you know how many to find.
 - **Submit (correct)** → green wash, auto-advances after a moment.
 - **Submit (wrong)** → pink wash, your placements recolor green/red, **missed targets appear as ghost-green notes** so you can see where the answer should have been. Submit swaps to **Next** — study at your own pace, click when ready.
-- **Clear** button wipes all placements mid-round if you want to start over.
+- **Undo** rewinds the last add / remove / move. **Clear** wipes all placements mid-round.
 - Treble range: A3–E6. Bass range: C2–E4. Naturals only (accidentals deliberately excluded).
 
 ### Shared across both modes
