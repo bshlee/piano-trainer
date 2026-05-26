@@ -52,14 +52,17 @@ function renderClefOnly(container, clef) {
   stave.setContext(ctx).draw();
 }
 
-// Render a tall staff with the chosen clef and N placed pitches (whole notes,
-// sorted by pitch, spread horizontally). VexFlow auto-draws ledger lines for
-// notes off the staff. Returns {bottomLineY, stepPx, svgWidth, svgHeight} so
-// the caller can map click Y → diatonic position.
+// Render a tall staff with the chosen clef and N notes. VexFlow auto-draws
+// ledger lines for notes off the staff. Returns {bottomLineY, stepPx, svgWidth,
+// svgHeight} so the caller can map click Y → diatonic position.
 //
-// `pitches` is an array of { step, octave }.
-// `marks` (optional) is an array of {step, octave, kind: 'correct'|'wrong'|'miss'}
-//   that overrides per-note styling during post-submit feedback.
+// `pitches` is an array of { step, octave } — the user's placements.
+// `marks` (optional) is an array of {step, octave, kind} that drives feedback:
+//   - kind 'correct' — pitch is in `pitches` AND was a target (rendered green)
+//   - kind 'wrong'   — pitch is in `pitches` but NOT a target (rendered red)
+//   - kind 'miss'    — pitch is NOT in `pitches` but WAS a target. Rendered as
+//                       a ghost-green note in the same voice so the user sees
+//                       where the answer should have been.
 function renderFindStaff(container, clef, pitches, marks) {
   container.innerHTML = '';
 
@@ -80,27 +83,50 @@ function renderFindStaff(container, clef, pitches, marks) {
   stave.addClef(clef === 'bass' ? 'bass' : 'treble');
   stave.setContext(ctx).draw();
 
-  if (pitches && pitches.length > 0) {
-    const sorted = [...pitches].sort((a, b) => midiOf(a) - midiOf(b));
+  // Build the unified note list: every placement (with kind from marks if any),
+  // plus every 'miss' from marks (as ghost notes the user didn't place).
+  const placedKeys = new Set((pitches || []).map(pitchKey));
+  const markMap = new Map();
+  if (marks) for (const m of marks) markMap.set(pitchKey(m), m.kind);
 
-    const markMap = new Map();
-    if (marks) for (const m of marks) markMap.set(pitchKey(m), m.kind);
+  const items = [];
+  for (const p of (pitches || [])) {
+    items.push({ pitch: p, kind: markMap.get(pitchKey(p)) || 'placed' });
+  }
+  if (marks) {
+    for (const m of marks) {
+      if (m.kind === 'miss' && !placedKeys.has(pitchKey(m))) {
+        items.push({ pitch: { step: m.step, octave: m.octave }, kind: 'miss' });
+      }
+    }
+  }
 
-    const notes = sorted.map(p => {
+  if (items.length > 0) {
+    items.sort((a, b) => midiOf(a.pitch) - midiOf(b.pitch));
+
+    const notes = items.map(({ pitch, kind }) => {
       const note = new VF.StaveNote({
         clef: clef === 'bass' ? 'bass' : 'treble',
-        keys: [`${p.step.toLowerCase()}/${p.octave}`],
+        keys: [`${pitch.step.toLowerCase()}/${pitch.octave}`],
         duration: 'w',
       });
-      const kind = markMap.get(pitchKey(p));
-      if (kind === 'wrong') note.setStyle({ fillStyle: '#a02020', strokeStyle: '#a02020' });
-      else if (kind === 'correct') note.setStyle({ fillStyle: '#1e7a32', strokeStyle: '#1e7a32' });
+      if (kind === 'wrong') {
+        note.setStyle({ fillStyle: '#a02020', strokeStyle: '#a02020' });
+      } else if (kind === 'correct') {
+        note.setStyle({ fillStyle: '#1e7a32', strokeStyle: '#1e7a32' });
+      } else if (kind === 'miss') {
+        // Ghost green — what the user should have placed.
+        note.setStyle({ fillStyle: 'rgba(30,122,50,0.42)', strokeStyle: 'rgba(30,122,50,0.55)' });
+      }
       return note;
     });
 
+    // Tight clustering: ~70 px per note rather than spreading across the full
+    // staff. Caps at the staff width so dense rounds still fit.
+    const formatWidth = Math.min(Math.max(items.length * 70 + 40, 120), width - 100);
     const voice = new VF.Voice({ num_beats: notes.length, beat_value: 1 });
     voice.addTickables(notes);
-    new VF.Formatter().joinVoices([voice]).format([voice], Math.max(width - 100, 120));
+    new VF.Formatter().joinVoices([voice]).format([voice], formatWidth);
     voice.draw(ctx, stave);
   }
 

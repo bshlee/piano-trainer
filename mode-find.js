@@ -34,6 +34,7 @@ let targetMidis = null;     // Set<number>
 const selectedMidis = new Set();  // user's placements
 let staffRef = null;        // {bottomLineY, stepPx, svgWidth, svgHeight}
 let locked = false;
+let awaitingNext = false;   // true after a wrong submit until user clicks Next
 let advanceTimer = null;
 
 function settings() { return window.PT_Settings.get(); }
@@ -98,6 +99,8 @@ function start() {
   if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null; }
 
   locked = false;
+  awaitingNext = false;
+  findSubmitBtn.textContent = 'Submit';
   selectedMidis.clear();
   findFeedbackEl.textContent = '';
   findFeedbackEl.className = 'find-feedback';
@@ -262,6 +265,9 @@ function clearSelection() {
 }
 
 function submit() {
+  // Submit button doubles as Next during wrong-review — handle that first so
+  // the `locked` guard below doesn't swallow the click.
+  if (awaitingNext) { nextQuestion(); return; }
   if (locked || !targetMidis) return;
 
   let ok = selectedMidis.size === targetMidis.size;
@@ -292,15 +298,31 @@ function submit() {
     findFeedbackEl.className = 'find-feedback wrong';
     findStaffEl.classList.add('wrong');
 
-    // Annotate the placed notes: green if it matched a target, red otherwise.
+    // Annotate placements (green for correct, red for wrong) AND show the
+    // missed targets as ghost-green notes so the user can study where the
+    // answer should have been.
     const marks = selectedPitches().map(p => {
       const m = midiFromStepOctave(p.step, p.octave);
       return { ...p, kind: targetMidis.has(m) ? 'correct' : 'wrong' };
     });
+    for (const m of targetMidis) {
+      if (!selectedMidis.has(m)) {
+        const p = midiToStepOctave(m);
+        if (p) marks.push({ ...p, kind: 'miss' });
+      }
+    }
     rerenderStaff(marks);
 
-    advanceTimer = setTimeout(start, 2000);
+    // No auto-advance on wrong — let the user study the corrected staff.
+    // Submit button becomes Next; clicking it calls nextQuestion().
+    awaitingNext = true;
+    findSubmitBtn.textContent = 'Next';
   }
+}
+
+function nextQuestion() {
+  if (!awaitingNext) return;
+  start();
 }
 
 function handleResize() {
