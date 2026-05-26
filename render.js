@@ -70,16 +70,29 @@ function renderFindStaff(container, clef, pitches, marks) {
   const pitchKey = (p) => `${p.step}${p.octave}`;
   const midiOf = (p) => (p.octave + 1) * 12 + STEP_TO_PC[p.step];
 
-  // Width: fill the parent (no cap). Re-rendered on resize.
+  // SCALE makes the whole rendering bigger via the SVG context, so glyphs and
+  // line spacing both grow proportionally. Cap the displayed width on wide
+  // screens — keeps the staff "short" so the cluster of notes is prominent
+  // rather than hugging the left edge of a stretched staff.
+  const SCALE = 1.3;
   const parentW = (container.parentElement && container.parentElement.clientWidth) || 480;
-  const width = Math.max(parentW - 16, 280);
-  const height = 170; // ~50 above stave (room for E6) + 40 stave + ~70 below (room for C2)
+  const width = Math.min(Math.max(parentW - 16, 280), 480);
+  const height = 200;
+
   const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
   renderer.resize(width, height);
   const ctx = renderer.getContext();
+  ctx.scale(SCALE, SCALE);
 
-  const staveTopY = 50;
-  const stave = new VF.Stave(8, staveTopY, width - 16);
+  // VexFlow works in internal (pre-scale) coords. We divide displayed targets
+  // by SCALE to compute them, then multiply VexFlow's results back by SCALE
+  // before returning so the click handlers can use SVG-canvas units directly.
+  const internalW = width / SCALE;
+  const stavLeftPad = 8 / SCALE;
+  const staveTopY = 60 / SCALE;  // displayed ~60 → enough room above for E6 ledger
+  const staveInnerWidth = internalW - 2 * stavLeftPad;
+
+  const stave = new VF.Stave(stavLeftPad, staveTopY, staveInnerWidth);
   stave.addClef(clef === 'bass' ? 'bass' : 'treble');
   stave.setContext(ctx).draw();
 
@@ -122,26 +135,30 @@ function renderFindStaff(container, clef, pitches, marks) {
       return note;
     });
 
-    // Tight clustering: ~70 px per note rather than spreading across the full
-    // staff. Caps at the staff width so dense rounds still fit.
-    const formatWidth = Math.min(Math.max(items.length * 70 + 40, 120), width - 100);
+    // formatWidth in internal units → displayed ≈ value * SCALE.
+    const formatWidth = Math.min(
+      Math.max(items.length * 70 + 40, 120),
+      staveInnerWidth - 80
+    );
     const voice = new VF.Voice({ num_beats: notes.length, beat_value: 1 });
     voice.addTickables(notes);
     new VF.Formatter().joinVoices([voice]).format([voice], formatWidth);
     voice.draw(ctx, stave);
 
-    // Record each placed note's X (SVG internal coords) so the drag preview
-    // can align horizontally with the note it's modifying. +7 ≈ half a whole-
-    // note head-width to land on the head's visual center.
+    // Each placed note's X in SVG-canvas (displayed) coords. +7 ≈ half a
+    // whole-note head in internal units to land on the head's visual center,
+    // then * SCALE to convert from internal to canvas.
     for (let i = 0; i < items.length; i++) {
       const midi = midiOf(items[i].pitch);
-      noteXs[midi] = notes[i].getAbsoluteX() + 7;
+      noteXs[midi] = (notes[i].getAbsoluteX() + 7) * SCALE;
     }
   }
 
+  // Return values in SVG-canvas units (post-scale) so mode-find.js can use
+  // them directly against click coords without knowing about SCALE.
   return {
-    bottomLineY: stave.getYForLine(4),
-    stepPx: 5, // VexFlow default: one diatonic step = 5px vertical
+    bottomLineY: stave.getYForLine(4) * SCALE,
+    stepPx: 5 * SCALE, // one diatonic step in canvas units
     svgWidth: width,
     svgHeight: height,
     noteXs,

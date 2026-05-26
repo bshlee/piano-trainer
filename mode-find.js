@@ -138,11 +138,19 @@ function updateCounter() {
   findTargetEl.textContent = String(targetMidis ? targetMidis.size : 0);
 }
 
-// Convert a click Y (relative to the staff SVG) to the nearest in-range natural MIDI.
+// Convert a click Y (CSS px, relative to the staff SVG) to the nearest
+// in-range natural MIDI. staffRef values are in SVG-canvas units; map CSS px
+// → canvas units via the displayed/intrinsic height ratio (1:1 in normal
+// layouts, but defensive for cases where max-width shrinks the SVG).
 function snapClickYToMidi(clickY) {
   if (!staffRef) return null;
+  const svg = findStaffEl.querySelector('svg');
+  if (!svg) return null;
+  const svgRect = svg.getBoundingClientRect();
+  const scaleY = staffRef.svgHeight > 0 ? svgRect.height / staffRef.svgHeight : 1;
+  const clickYCanvas = clickY / scaleY;
   const ref = CLEF_REF[currentClef];
-  const stepsAboveRef = Math.round((staffRef.bottomLineY - clickY) / staffRef.stepPx);
+  const stepsAboveRef = Math.round((staffRef.bottomLineY - clickYCanvas) / staffRef.stepPx);
   const refIdx = STEPS.indexOf(ref.step);
   const absIdx = refIdx + stepsAboveRef;
   const octaveOffset = Math.floor(absIdx / 7);
@@ -206,16 +214,17 @@ function showPreviewAtMidi(midi) {
   const wrapRect = findStaffEl.getBoundingClientRect();
 
   // X: align with the original note's X if we're modifying one; otherwise
-  // staff center. SVG may be CSS-scaled (max-width: 100%), so map internal
-  // X → displayed X via the width ratio.
+  // staff center. SVG may be CSS-scaled (max-width: 100%), so map canvas
+  // coords → displayed CSS px via the dimension ratios.
   let xInSvg = staffRef.svgWidth / 2;
   if (dragOriginMidi != null && staffRef.noteXs && staffRef.noteXs[dragOriginMidi] != null) {
     xInSvg = staffRef.noteXs[dragOriginMidi];
   }
   const scaleX = staffRef.svgWidth > 0 ? svgRect.width / staffRef.svgWidth : 1;
+  const scaleY = staffRef.svgHeight > 0 ? svgRect.height / staffRef.svgHeight : 1;
 
   const el = ensurePreviewEl();
-  el.style.top = (svgRect.top - wrapRect.top + y) + 'px';
+  el.style.top = (svgRect.top - wrapRect.top + y * scaleY) + 'px';
   el.style.left = (svgRect.left - wrapRect.left + xInSvg * scaleX) + 'px';
   el.dataset.midi = String(midi);
   // Red hint = "release here removes a note". When we're carrying an origin
