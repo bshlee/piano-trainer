@@ -39,5 +39,19 @@ function renderNote(container, pitch) {
   voice.draw(ctx, stave);
 }
 
+// Draw an empty staff showing only the chosen clef. Used by Find Note's prompt area.
+function renderClefOnly(container, clef) {
+  container.innerHTML = '';
+  const width = 70;
+  const height = 90;
+  const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
+  renderer.resize(width, height);
+  const ctx = renderer.getContext();
+  const stave = new VF.Stave(0, 8, width);
+  stave.addClef(clef === 'bass' ? 'bass' : 'treble');
+  stave.setContext(ctx).draw();
+}
+
 window.renderNote = renderNote;
+window.renderClefOnly = renderClefOnly;
 })();

@@ -1,4 +1,5 @@
-// Sheet Music Trainer — game logic, answer matching, persistence.
+// Sheet Music Trainer — shared infrastructure + Read Note mode.
+// Find Note mode lives in mode-find.js and is wired in via window.PT_FindNote.
 
 (function () {
 const { renderNote } = window;
@@ -15,13 +16,26 @@ const KO_TO_LETTER = {
 };
 const LETTER_TO_KO = { C:'도', D:'레', E:'미', F:'파', G:'솔', A:'라', B:'시' };
 
-// Diatonic notes per clef. Octaves chosen to cover staff lines/spaces with one ledger line above/below.
-// Treble staff lines/spaces: E4 F4 G4 A4 B4 C5 D5 E5 F5 — extend with ledgers.
-// Bass staff: G2 A2 B2 C3 D3 E3 F3 G3 A3 — extend with ledgers.
+// White vs black pitch classes; sharp-flavor letter for black keys.
+const WHITE_PCS = new Set([0, 2, 4, 5, 7, 9, 11]);
+const PC_TO_LETTER_NATURAL = { 0:'C', 2:'D', 4:'E', 5:'F', 7:'G', 9:'A', 11:'B' };
+const PC_TO_LETTER_SHARP   = { 1:'C#', 3:'D#', 6:'F#', 8:'G#', 10:'A#' };
+
+// Diatonic notes per clef for Read Note mode (single-note questions).
+// Treble staff lines/spaces: E4 F4 G4 A4 B4 C5 D5 E5 F5 — extended with one ledger each side (C4..C6).
+// Bass staff: G2 A2 B2 C3 D3 E3 F3 G3 A3 — extended to C2..C4.
 const RANGES = {
-  treble: { minOct: 4, maxOct: 5, // we'll allow C4..C6 inclusive
-            lowest: { step:'C', octave:4 }, highest: { step:'C', octave:6 } },
+  treble: { lowest: { step:'C', octave:4 }, highest: { step:'C', octave:6 } },
   bass:   { lowest: { step:'C', octave:2 }, highest: { step:'C', octave:4 } },
+};
+
+// Piano keyboard MIDI ranges per mode.
+// Read Note keeps the original single-octave C4–C5 visual.
+// Find Note extends beyond the staff range so ledger-line keys are tappable.
+const PIANO_RANGES = {
+  read: { low: 60, high: 72 },            // C4..C5
+  findTreble: { low: 57, high: 88 },      // A3..E6
+  findBass:   { low: 36, high: 64 },      // C2..E4
 };
 
 // ---------- pitch utilities ----------
@@ -51,6 +65,10 @@ const DIATONIC = {
   treble: buildDiatonicList('treble'),
   bass: buildDiatonicList('bass'),
 };
+
+function midiFromStepOctave(step, octave, alter) {
+  return (octave + 1) * 12 + STEP_TO_PC[step] + (alter || 0);
+}
 
 function randomPitch(clefMode, accidentalRate) {
   const clef = clefMode === 'both'
@@ -107,6 +125,7 @@ function parseAnswer(raw) {
 
 // ---------- DOM refs ----------
 
+const bodyEl = document.body;
 const staffEl = document.getElementById('staff');
 const staffWrap = document.getElementById('staff-wrap');
 const feedbackEl = document.getElementById('feedback');
@@ -128,55 +147,98 @@ const distPanel = document.getElementById('distribution-panel');
 const distSummary = document.getElementById('dist-summary');
 const distChart = document.getElementById('dist-chart');
 const distResetBtn = document.getElementById('dist-reset');
+const modeChip = document.getElementById('mode-chip');
+const modeChipValue = document.getElementById('mode-chip-value');
+const modePicker = document.getElementById('mode-picker');
+const langRadios = document.querySelectorAll('input[name="find-note-lang"]');
 
 // ---------- piano keyboard ----------
+//
+// buildPiano(range, {extended}) builds white + black keys for a given MIDI range.
+// - Single-octave (read mode): white keys flex-fill the container; blacks use % positions.
+// - Extended (find mode): whites are fixed-width 44px and the piano scrolls horizontally;
+//   blacks use pixel positions so they land between the right whites regardless of scroll.
 
-// midi values anchor the keyboard at C4 (middle C); the closing C is C5.
-const WHITE_KEYS = [
-  { letter: 'C', pc: 0,  midi: 60 },
-  { letter: 'D', pc: 2,  midi: 62 },
-  { letter: 'E', pc: 4,  midi: 64 },
-  { letter: 'F', pc: 5,  midi: 65 },
-  { letter: 'G', pc: 7,  midi: 67 },
-  { letter: 'A', pc: 9,  midi: 69 },
-  { letter: 'B', pc: 11, midi: 71 },
-  { letter: 'C', pc: 0,  midi: 72 }, // closing C for visual octave
-];
+const WHITE_PX = 44;
+const WHITE_GAP_PX = 2;
+const BLACK_PX = 30;
 
-// Black-key positions: left offset as % of total piano width.
-// Width is 9% (matches CSS). Center is on the boundary between two white keys
-// (each white key = 12.5% of width with 8 keys).
-const BLACK_KEYS = [
-  { letter: 'C#', pc: 1,  midi: 61, leftPct: 12.5 - 4.5 }, // between C and D
-  { letter: 'D#', pc: 3,  midi: 63, leftPct: 25.0 - 4.5 }, // between D and E
-  { letter: 'F#', pc: 6,  midi: 66, leftPct: 50.0 - 4.5 }, // between F and G
-  { letter: 'G#', pc: 8,  midi: 68, leftPct: 62.5 - 4.5 }, // between G and A
-  { letter: 'A#', pc: 10, midi: 70, leftPct: 75.0 - 4.5 }, // between A and B
-];
+function buildPiano(range, opts) {
+  const extended = !!(opts && opts.extended);
+  pianoEl.classList.toggle('extended', extended);
 
-function buildPiano() {
   whiteRow.innerHTML = '';
   blackRow.innerHTML = '';
 
-  for (const k of WHITE_KEYS) {
+  const whites = [];
+  const blacks = [];
+  for (let m = range.low; m <= range.high; m++) {
+    const pc = ((m % 12) + 12) % 12;
+    if (WHITE_PCS.has(pc)) {
+      whites.push({ midi: m, pc, letter: PC_TO_LETTER_NATURAL[pc] });
+    } else {
+      blacks.push({ midi: m, pc, letter: PC_TO_LETTER_SHARP[pc], afterWhite: whites.length - 1 });
+    }
+  }
+
+  for (const k of whites) {
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'white';
     btn.dataset.pc = k.pc;
-    btn.setAttribute('aria-label', k.letter);
+    btn.dataset.midi = k.midi;
+    const oct = Math.floor(k.midi / 12) - 1;
+    btn.setAttribute('aria-label', `${k.letter}${oct}`);
     btn.innerHTML = `<span class="label"><span class="ko">${LETTER_TO_KO[k.letter]}</span><span class="en">${k.letter}</span></span>`;
     btn.addEventListener('click', () => handleKey(k.pc, k.midi, btn));
     whiteRow.appendChild(btn);
   }
 
-  for (const k of BLACK_KEYS) {
-    const btn = document.createElement('button');
-    btn.className = 'black';
-    btn.dataset.pc = k.pc;
-    btn.style.left = k.leftPct + '%';
-    btn.setAttribute('aria-label', k.letter);
-    btn.addEventListener('click', () => handleKey(k.pc, k.midi, btn));
-    blackRow.appendChild(btn);
+  if (extended) {
+    for (const k of blacks) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'black';
+      btn.dataset.pc = k.pc;
+      btn.dataset.midi = k.midi;
+      // Boundary between whites[afterWhite] and whites[afterWhite + 1]:
+      const boundary = k.afterWhite * (WHITE_PX + WHITE_GAP_PX) + WHITE_PX + WHITE_GAP_PX / 2;
+      btn.style.left = (boundary - BLACK_PX / 2) + 'px';
+      btn.style.width = BLACK_PX + 'px';
+      btn.setAttribute('aria-label', k.letter);
+      btn.addEventListener('click', () => handleKey(k.pc, k.midi, btn));
+      blackRow.appendChild(btn);
+    }
+  } else {
+    const N = whites.length;
+    const pctPerWhite = 100 / N;
+    const blackWidthPct = 9;
+    for (const k of blacks) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'black';
+      btn.dataset.pc = k.pc;
+      btn.dataset.midi = k.midi;
+      btn.style.left = ((k.afterWhite + 1) * pctPerWhite - blackWidthPct / 2) + '%';
+      btn.setAttribute('aria-label', k.letter);
+      btn.addEventListener('click', () => handleKey(k.pc, k.midi, btn));
+      blackRow.appendChild(btn);
+    }
   }
+
+  applyShowLabels();
+}
+
+function pianoKeyByMidi(midi) {
+  return pianoEl.querySelector(`button[data-midi="${midi}"]`);
+}
+
+function scrollPianoToMidi(midi) {
+  const btn = pianoKeyByMidi(midi);
+  if (!btn) return;
+  // Center the target key within the visible viewport of .piano.
+  const target = btn.offsetLeft + btn.offsetWidth / 2 - pianoEl.clientWidth / 2;
+  pianoEl.scrollLeft = Math.max(0, target);
 }
 
 // ---------- audio (Web Audio API) ----------
@@ -286,7 +348,13 @@ function playMidi(midi) {
   noise.stop(t0 + thudDur);
 }
 
+// Piano key click router. In Read Note: play + submit pitch class.
+// In Find Note: delegate to PT_FindNote which manages its own selection state.
 function handleKey(pc, midi, btnEl) {
+  if (settings.mode === 'find' && window.PT_FindNote) {
+    window.PT_FindNote.toggleKey(midi, btnEl);
+    return;
+  }
   playMidi(midi);
   submitPitchClass(pc, btnEl);
 }
@@ -310,8 +378,12 @@ function loadSettings() {
       clefMode: s.clefMode || 'treble',
       accidentalRate: typeof s.accidentalRate === 'number' ? s.accidentalRate : 0.30,
       showLabels: typeof s.showLabels === 'boolean' ? s.showLabels : false,
+      mode: (s.mode === 'read' || s.mode === 'find') ? s.mode : null,
+      findNoteLang: s.findNoteLang === 'en' ? 'en' : 'ko',
     };
-  } catch { return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false }; }
+  } catch {
+    return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false, mode: null, findNoteLang: 'ko' };
+  }
 }
 function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -376,6 +448,7 @@ function renderStats() {
 }
 
 function newQuestion() {
+  if (settings.mode !== 'read') return; // ignore stale auto-advances after mode switch
   locked = false;
   feedbackEl.textContent = '';
   feedbackEl.className = 'feedback';
@@ -482,6 +555,42 @@ function describePitch(p) {
   return `${western} (${ko})`;
 }
 
+// ---------- mode dispatch ----------
+
+function applyMode(mode) {
+  settings.mode = mode;
+  saveSettings();
+  bodyEl.dataset.mode = mode;
+  modeChipValue.textContent = mode === 'find' ? 'Find' : 'Read';
+
+  if (mode === 'find') {
+    if (window.PT_FindNote) window.PT_FindNote.start();
+  } else {
+    buildPiano(PIANO_RANGES.read, { extended: false });
+    newQuestion();
+  }
+}
+
+function showPicker() {
+  modePicker.classList.add('open');
+}
+function hidePicker() {
+  modePicker.classList.remove('open');
+}
+
+modePicker.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-pick-mode]');
+  if (!btn) return;
+  const mode = btn.dataset.pickMode;
+  if (mode !== 'read' && mode !== 'find') return;
+  hidePicker();
+  applyMode(mode);
+});
+
+modeChip.addEventListener('click', () => {
+  showPicker();
+});
+
 // ---------- event wiring ----------
 
 submitBtn.addEventListener('click', submitTyped);
@@ -498,7 +607,11 @@ clefToggle.addEventListener('click', (e) => {
   settings.clefMode = btn.dataset.clef;
   saveSettings();
   syncClefToggle();
-  newQuestion();
+  if (settings.mode === 'find' && window.PT_FindNote) {
+    window.PT_FindNote.start();
+  } else {
+    newQuestion();
+  }
 });
 function syncClefToggle() {
   clefToggle.querySelectorAll('button').forEach(b => {
@@ -522,6 +635,15 @@ showLabelsCheckbox.addEventListener('change', () => {
 function applyShowLabels() {
   pianoEl.classList.toggle('no-labels', !settings.showLabels);
 }
+
+langRadios.forEach(r => {
+  r.addEventListener('change', () => {
+    if (!r.checked) return;
+    settings.findNoteLang = r.value === 'en' ? 'en' : 'ko';
+    saveSettings();
+    if (window.PT_FindNote) window.PT_FindNote.refreshPrompt();
+  });
+});
 
 distPanel.addEventListener('toggle', () => {
   if (distPanel.open) renderDistribution();
@@ -548,26 +670,49 @@ resetBtn.addEventListener('click', () => {
   renderStats();
 });
 
-// Physical keyboard shortcut: pressing a-g + optional # or b types it for you.
-// (Just relies on the input field; nothing special needed.)
+// ---------- shared API for mode-find.js ----------
+
+window.PT_Audio = { play: playMidi };
+window.PT_Pitch = {
+  LETTER_TO_KO,
+  PC_TO_LETTER_NATURAL,
+  midiFromStepOctave,
+};
+window.PT_Piano = {
+  build: buildPiano,
+  ranges: PIANO_RANGES,
+  keyByMidi: pianoKeyByMidi,
+  scrollToMidi: scrollPianoToMidi,
+};
+window.PT_Settings = {
+  get: () => settings,
+};
 
 // ---------- boot ----------
 
-buildPiano();
 syncClefToggle();
 accSlider.value = String(Math.round(settings.accidentalRate * 100));
 accSliderVal.textContent = accSlider.value + '%';
 showLabelsCheckbox.checked = settings.showLabels;
-applyShowLabels();
+langRadios.forEach(r => { r.checked = (r.value === settings.findNoteLang); });
 renderStats();
-newQuestion();
+
+if (!settings.mode) {
+  showPicker();
+} else {
+  applyMode(settings.mode);
+}
 
 // Re-render the staff on resize so SVG width tracks the container.
 let resizeRaf = 0;
 window.addEventListener('resize', () => {
   cancelAnimationFrame(resizeRaf);
   resizeRaf = requestAnimationFrame(() => {
-    if (currentPitch) renderNote(staffEl, currentPitch);
+    if (settings.mode === 'read' && currentPitch) {
+      renderNote(staffEl, currentPitch);
+    } else if (settings.mode === 'find' && window.PT_FindNote) {
+      window.PT_FindNote.handleResize();
+    }
   });
 });
 

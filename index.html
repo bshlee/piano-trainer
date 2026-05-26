@@ -16,8 +16,10 @@
     --wrong: #f87171;
     --white-key: #f8f8fb;
     --white-key-active: #d8dcff;
+    --white-key-selected: #b5c0ff;
     --black-key: #2a2a3e;
     --black-key-active: #5560a8;
+    --black-key-selected: #5560a8;
     --key-border: #1a1a2e;
     --shadow: 0 2px 8px rgba(0,0,0,0.25);
   }
@@ -59,7 +61,25 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
+    flex-wrap: wrap;
   }
+  .mode-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel);
+    color: var(--ink);
+    border: 0;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    touch-action: manipulation;
+  }
+  .mode-chip .mode-chip-label { color: var(--muted); font-weight: 500; }
+  .mode-chip .mode-chip-arrow { color: var(--muted); font-size: 12px; }
   .clef-toggle {
     display: flex;
     background: var(--panel);
@@ -144,6 +164,7 @@
     cursor: pointer;
     touch-action: manipulation;
   }
+  .input-row button.wide { flex: 1; padding: 14px 18px; }
 
   /* --- piano --- */
   .piano {
@@ -152,6 +173,18 @@
     user-select: none;
     -webkit-user-select: none;
     touch-action: manipulation;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  .piano.extended { touch-action: pan-x; }
+  .piano-inner {
+    position: relative;
+    height: 100%;
+    width: 100%;
+  }
+  .piano.extended .piano-inner {
+    width: max-content;
   }
   .piano .row {
     display: flex;
@@ -175,9 +208,18 @@
     align-items: center;
     box-shadow: inset 0 -4px 6px rgba(0,0,0,0.06);
     transition: background 80ms;
+    min-width: 0;
+  }
+  .piano.extended .white {
+    flex: 0 0 44px;
+    min-width: 44px;
+    max-width: 44px;
   }
   .white:active, .white.flash {
     background: var(--white-key-active);
+  }
+  .white.selected {
+    background: var(--white-key-selected);
   }
   .piano.no-labels .white .label { visibility: hidden; }
   .white .label {
@@ -197,6 +239,8 @@
     font-size: 11px;
     font-weight: 500;
   }
+  .piano.extended .white .label .ko { font-size: 14px; }
+  .piano.extended .white .label .en { font-size: 10px; }
   /* Black keys overlay */
   .black-row {
     position: absolute;
@@ -221,6 +265,10 @@
   }
   .black:active, .black.flash {
     background: var(--black-key-active);
+  }
+  .black.selected {
+    background: var(--black-key-selected);
+    box-shadow: inset 0 -4px 6px rgba(0,0,0,0.5), 0 0 0 2px var(--accent);
   }
 
   /* --- score --- */
@@ -336,17 +384,180 @@
     cursor: pointer;
   }
 
+  /* --- Find Note mode UI --- */
+  .find-wrap {
+    background: var(--white-key);
+    border-radius: 14px;
+    padding: 18px 16px 14px;
+    box-shadow: var(--shadow);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "clef name counter"
+      "feedback feedback feedback";
+    align-items: center;
+    column-gap: 14px;
+    row-gap: 8px;
+    min-height: 160px;
+    position: relative;
+    transition: background-color 200ms ease;
+  }
+  .find-wrap.correct { background: #d6f5d6; }
+  .find-wrap.wrong { background: #fbd6d6; }
+  .find-clef {
+    grid-area: clef;
+    width: 70px;
+    min-height: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .find-clef svg { display: block; max-width: 100%; height: auto; }
+  .find-name {
+    grid-area: name;
+    text-align: center;
+    color: #1a1a2e;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .find-name .primary {
+    display: block;
+    font-size: 64px;
+  }
+  .find-name .secondary {
+    display: block;
+    margin-top: 4px;
+    font-size: 14px;
+    color: #555;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .find-counter {
+    grid-area: counter;
+    color: #333;
+    font-weight: 700;
+    font-size: 22px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    min-width: 64px;
+  }
+  .find-counter .label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: #777;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 2px;
+  }
+  .find-counter .nums {
+    display: inline-block;
+  }
+  .find-feedback {
+    grid-area: feedback;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #444;
+    min-height: 18px;
+  }
+  .find-feedback.correct { color: #1e7a32; }
+  .find-feedback.wrong { color: #a02020; }
+
+  /* --- mode-scoped section visibility --- */
+  body[data-mode="read"] #find-note { display: none; }
+  body[data-mode="find"] #read-note { display: none; }
+  body[data-mode="read"] .mode-find-only { display: none; }
+  body[data-mode="find"] .mode-read-only { display: none; }
+
+  /* --- mode picker overlay --- */
+  .mode-picker {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 20, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 180ms ease;
+    pointer-events: none;
+  }
+  .mode-picker.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .mode-picker-card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--panel);
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .mode-picker-card h2 {
+    margin: 0 0 4px 0;
+    font-size: 18px;
+    text-align: center;
+    color: var(--ink);
+  }
+  .mode-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    border: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+    padding: 16px 18px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 120ms ease, transform 120ms ease;
+    touch-action: manipulation;
+  }
+  .mode-option:hover {
+    background: #2a2a4a;
+  }
+  .mode-option:active {
+    transform: scale(0.98);
+  }
+  .mode-option-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .mode-option-desc {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+
   @media (max-width: 380px) {
     .clef-toggle button { padding: 8px 10px; font-size: 14px; }
     .piano { height: 140px; }
     .white .label .en { display: none; }
+    .find-name .primary { font-size: 52px; }
+    .find-clef { width: 56px; min-height: 70px; }
   }
 </style>
 </head>
-<body>
+<body data-mode="read">
   <div class="app">
 
     <div class="topbar">
+      <button type="button" class="mode-chip" id="mode-chip" aria-haspopup="dialog">
+        <span class="mode-chip-label">Mode:</span>
+        <span class="mode-chip-value" id="mode-chip-value">Read</span>
+        <span class="mode-chip-arrow" aria-hidden="true">▾</span>
+      </button>
       <div class="clef-toggle" id="clef-toggle" role="group" aria-label="Clef mode">
         <button data-clef="treble" class="on">Treble</button>
         <button data-clef="bass">Bass</button>
@@ -354,27 +565,50 @@
       </div>
     </div>
 
-    <div class="staff-wrap" id="staff-wrap">
-      <div id="staff"></div>
-      <div class="feedback" id="feedback"></div>
-    </div>
+    <section id="read-note">
+      <div class="staff-wrap" id="staff-wrap">
+        <div id="staff"></div>
+        <div class="feedback" id="feedback"></div>
+      </div>
 
-    <div class="input-row">
-      <input
-        id="answer"
-        type="text"
-        inputmode="text"
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="off"
-        spellcheck="false"
-        aria-label="Note answer">
-      <button id="submit">Submit</button>
-    </div>
+      <div class="input-row" style="margin-top: 14px;">
+        <input
+          id="answer"
+          type="text"
+          inputmode="text"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          aria-label="Note answer">
+        <button id="submit">Submit</button>
+      </div>
+    </section>
 
-    <div class="piano" id="piano" aria-label="One octave piano">
-      <div class="row" id="white-row"></div>
-      <div class="black-row" id="black-row"></div>
+    <section id="find-note">
+      <div class="find-wrap" id="find-wrap">
+        <div class="find-clef" id="find-clef"></div>
+        <div class="find-name" id="find-name">
+          <span class="primary" id="find-name-primary">도</span>
+          <span class="secondary" id="find-name-secondary">C</span>
+        </div>
+        <div class="find-counter">
+          <span class="label">Selected</span>
+          <span class="nums"><span id="find-selected">0</span> / <span id="find-target">0</span></span>
+        </div>
+        <div class="find-feedback" id="find-feedback"></div>
+      </div>
+
+      <div class="input-row" style="margin-top: 14px;">
+        <button id="find-submit" class="wide">Submit</button>
+      </div>
+    </section>
+
+    <div class="piano" id="piano" aria-label="Piano keyboard">
+      <div class="piano-inner">
+        <div class="row" id="white-row"></div>
+        <div class="black-row" id="black-row"></div>
+      </div>
     </div>
 
     <div class="score">
@@ -385,7 +619,7 @@
 
     <details class="settings">
       <summary>Settings</summary>
-      <div class="row">
+      <div class="row mode-read-only">
         <label for="accidental-rate" style="min-width: 110px;">Accidentals</label>
         <input type="range" id="accidental-rate" min="0" max="100" step="5" value="30">
         <span id="accidental-rate-val" style="min-width:40px; text-align:right;">30%</span>
@@ -395,8 +629,22 @@
         <input type="checkbox" id="show-labels" checked>
         <span style="font-size:12px;">Show 도/C on piano keys</span>
       </div>
-      <p style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
+      <div class="row mode-find-only">
+        <label style="min-width: 110px;">Note name</label>
+        <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+          <input type="radio" name="find-note-lang" value="ko" checked>
+          <span>한글 (도레미)</span>
+        </label>
+        <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+          <input type="radio" name="find-note-lang" value="en">
+          <span>English (CDE)</span>
+        </label>
+      </div>
+      <p class="mode-read-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
         Pitch-class only: octave doesn't matter. Enharmonic spellings (e.g. C# / Db) are both accepted.
+      </p>
+      <p class="mode-find-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
+        Find Note: tap every key matching the prompt name within the current clef's range (naturals only). Tap again to deselect.
       </p>
     </details>
 
@@ -407,13 +655,29 @@
       <button type="button" class="dist-reset" id="dist-reset">Reset distribution</button>
       <p style="margin: 8px 0 0; font-size: 11px; line-height: 1.5;">
         Vertical line = expected count if perfectly uniform. The further the bars deviate from it, the less uniform the draws have been.
+        Distribution only tracks Read Note questions.
       </p>
     </details>
 
   </div>
 
+  <div class="mode-picker" id="mode-picker" role="dialog" aria-modal="true" aria-label="Choose practice mode">
+    <div class="mode-picker-card">
+      <h2>Choose a mode</h2>
+      <button type="button" class="mode-option" data-pick-mode="read">
+        <span class="mode-option-title">Read Note</span>
+        <span class="mode-option-desc">Read a note on the staff and name it (typed, clicked, or audio).</span>
+      </button>
+      <button type="button" class="mode-option" data-pick-mode="find">
+        <span class="mode-option-title">Find Note</span>
+        <span class="mode-option-desc">Given a note name (도 / C), tap every matching key on the piano.</span>
+      </button>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.3/build/cjs/vexflow.js"></script>
   <script src="./render.js"></script>
+  <script src="./mode-find.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
