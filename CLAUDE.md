@@ -17,9 +17,9 @@ Live at **https://bshlee.github.io/piano-trainer/** (GitHub Pages, deploys from 
 | File | Role |
 |---|---|
 | `index.html` | Markup, inline `<style>`, script tags. Loads VexFlow from `cdn.jsdelivr.net`. Hosts the mode-picker overlay and both mode sections (`#read-note`, `#find-note`). |
-| `render.js`  | `window.renderNote(container, pitch)` draws clef + one note. `window.renderClefOnly(container, clef)` draws an empty staff with just the clef. `window.renderFindStaff(container, clef, pitches, marks)` draws a tall staff with N placed pitches (whole notes spread horizontally) — returns `{bottomLineY, stepPx}` so the caller can map click Y → diatonic step. |
+| `render.js`  | `window.renderNote(container, pitch)` draws clef + one note. `window.renderClefOnly(container, clef)` draws an empty staff with just the clef. `window.renderFindStaff(container, clef, pitches, marks)` draws a 170-px-tall staff with N notes (whole notes, tight horizontal clustering — ~70 px/note). Marks drive feedback colors: `'correct'` (green), `'wrong'` (red), `'miss'` (ghost-green; added to the voice even if not in `pitches`). Returns `{bottomLineY, stepPx, svgWidth, svgHeight}` so the caller can map click Y → diatonic step. |
 | `app.js`     | Shared infrastructure + Read Note mode: pitch utils, piano UI (`buildPiano(range)`), Web Audio synth, persistence, distribution stats, mode picker, mode dispatch. Exposes `window.PT_Audio`, `PT_Pitch`, `PT_Piano`, `PT_Settings`. |
-| `mode-find.js` | Find Note mode: prompts a natural note, computes target MIDIs in the clef's range, listens for clicks on the staff SVG, snaps click Y to the nearest diatonic step, toggles placement, submits/judges. Exposes `window.PT_FindNote`. |
+| `mode-find.js` | Find Note mode: prompts a natural note, computes target MIDIs in the clef's range, listens for pointer events on the staff SVG (pointerdown → preview marker → pointerup → toggle), submits/judges, manages the Submit↔Next button swap. Exposes `window.PT_FindNote`. |
 | `README.md`  | Human-facing docs (features, usage, dev setup). |
 | `SETUP.md`   | Step-by-step new-device onboarding (clone, SSH key, push). |
 
@@ -27,13 +27,13 @@ Live at **https://bshlee.github.io/piano-trainer/** (GitHub Pages, deploys from 
 
 Sections are clearly demarcated with `// ----------` headers. In order:
 
-1. **constants** — pitch maps + `PIANO_RANGES` (per mode/clef: `read`, `findTreble`, `findBass`)
+1. **constants** — pitch maps + `PIANO_RANGES` (only `read: { low: 60, high: 72 }`; Find Note hides the piano so it doesn't need a range here)
 2. **pitch utilities** — `pitchClass()`, `buildDiatonicList()`, `randomPitch()`, `midiFromStepOctave()`
 3. **typed-answer parsing** — `parseAnswer()` (returns pitch-class 0–11 or null)
 4. **DOM refs** — all `getElementById` lookups at top, including mode picker / chip / Find Note refs
-5. **piano keyboard** — `buildPiano(range, {extended})` generates white/black keys for any MIDI range; routes clicks through `handleKey()` which dispatches by mode
+5. **piano keyboard** — `buildPiano(range)` generates white/black keys for the MIDI range; clicks route through `handleKey()` which no-ops in Find Note (piano is hidden)
 6. **audio** — Web Audio additive-synthesis piano tone + iOS unlock pattern
-7. **game state** — `loadSettings/Stats/Distribution` + saves; `settings` now also has `mode` (`'read'`/`'find'`/null) and `findNoteLang` (`'ko'`/`'en'`)
+7. **game state** — `loadSettings/Stats/Distribution` + saves; `settings` has `mode` (`'read'`/`'find'`/null) and `findNoteLang` (`'ko'`/`'en'`)
 8. **render / judge / submit** (Read Note) — `newQuestion`, `submitTyped`, `submitPitchClass`, `judge`
 9. **mode dispatch** — `applyMode()`, `showPicker()`, `hidePicker()`, picker + mode-chip handlers
 10. **event wiring** — listeners for inputs/toggles; clef toggle dispatches by current mode
@@ -55,12 +55,27 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 - Prompt is a natural note name (default 도, toggle to `C` in Settings). Naturals only — accidentals deliberately excluded.
 - Task: **tap the staff** at every position matching that pitch class within the clef's range. Click Y snaps to the nearest line/space (5 px per diatonic step, VexFlow default). Counter shows `placed / target`.
 - **Piano keyboard is hidden** in this mode (`body[data-mode="find"] #piano { display: none }`). The drill is reading staff positions, not finding piano keys.
+- **`.score` and `#distribution-panel` are also hidden** in Find Note — they only track Read Note rounds and would mislead.
 - **Clef ranges** (extend a few ledger lines beyond the staff so users practice ledger-line reading):
   - Treble: A3–E6 (MIDI 57–88)
   - Bass: C2–E4 (MIDI 36–64)
   - "Both" clef → picks one randomly per question.
-- **Placement UX:** tap empty area on staff → note head appears at snapped position (with ledger line if outside the staff) + audio plays. Tap the same Y again → removes the placement. Submit button judges set equality. On wrong submit, placed notes color red (wrong picks) or green (correct picks); feedback text reports `expected N · missed N · X wrong`. Auto-advance to next question after feedback.
-- **Distribution panel does NOT track Find Note rounds** — only Read Note generates pitched questions.
+
+**Placement UX — drag-to-place with snap preview** (not pure tap):
+- `pointerdown` on the staff → a colored preview marker (small oval) appears at the snapped Y.
+- `pointermove` → the marker follows the finger, snapping step-by-step. Marker turns red when hovering an already-placed note (= "release to remove").
+- `pointerup` → commit: toggle the snapped MIDI in `selectedMidis` (add → audio plays; remove → silent).
+- A quick tap (no drag) just commits at the tapped Y. A drag lets you scrub up/down for precision (matters for ledger-line notes like bass C2, which are 5 px apart and hard to hit with a fingertip).
+- `touch-action: none` on `.find-staff` so iOS doesn't intercept the drag as a scroll.
+
+**Submit / feedback UX:**
+- **Correct submit** → staff turns green, feedback says `✓ All N Cs found`, **auto-advances** after ~900 ms.
+- **Wrong submit** → staff turns pink. Placed notes are recolored: green for correct, red for wrong. **Missed targets are also rendered**, as ghost-green notes (`rgba(30,122,50,0.42)`) in the same voice so the user sees where the answer should have been. Feedback text: `✗ expected N · missed M · X wrong`.
+- **No auto-advance on wrong.** The Submit button swaps to **"Next"** so the user can study the corrected staff at their own pace; clicking Next clears state and starts a fresh question.
+- Note heads cluster tightly (~70 px per note via formatter width clamp), so a 3-note answer doesn't sprawl across a 700-px staff.
+
+**Other buttons:**
+- **Clear** button (ghost-style, left of Submit) — wipes `selectedMidis` and re-renders an empty staff. No-ops when locked (during feedback review).
 
 ### Mode picker
 - Full-screen overlay shown on **first launch only** (when `settings.mode` is null). After that, the app boots into the saved mode.
@@ -88,13 +103,13 @@ The app dispatches by `settings.mode`. Two modes today: `'read'` and `'find'`. E
 Shared infrastructure exposed by `app.js` for other modes to use:
 - `window.PT_Audio.play(midi)` — piano-tone synthesis
 - `window.PT_Pitch.LETTER_TO_KO`, `PC_TO_LETTER_NATURAL`, `midiFromStepOctave(step,oct,alter)`
-- `window.PT_Piano.build(range, {extended})`, `.keyByMidi(midi)`, `.scrollToMidi(midi)`, `.ranges`
+- `window.PT_Piano.build(range)`, `.ranges` (only `read` defined today)
 - `window.PT_Settings.get()` — current settings object (mutate via `applyMode` / event handlers, then `saveSettings`)
 
 To add a third mode (e.g. intervals):
-1. Add a `<section id="mode-intervals">` in `index.html`; gate it with `body[data-mode="intervals"]` CSS.
+1. Add a `<section id="mode-intervals">` in `index.html`; gate it with `body[data-mode="intervals"]` CSS. Also add CSS to hide whatever shared chrome (`.score`, `#distribution-panel`, `#piano`) is irrelevant for the new mode.
 2. Add `'intervals'` as a valid value in `loadSettings()` and the mode-picker option button.
-3. Create `mode-intervals.js`, expose `window.PT_ModeIntervals.start()`, and route the piano-click handler in `app.js`'s `handleKey()`.
+3. Create `mode-intervals.js`, expose `window.PT_ModeIntervals.start()`. If the mode reuses the piano, the existing `handleKey()` dispatch already routes via `settings.mode`; if not (like Find Note), guard with `if (settings.mode === '<name>') return;`.
 4. Branch `applyMode()` to call the new mode's `start()`.
 
 ## Dev workflow
@@ -121,13 +136,20 @@ GitHub Pages config: source = "Deploy from a branch", branch = `main`, folder = 
 ## Verification before claiming a change works
 
 1. Open `index.html` in Chrome. First-ever load shows the mode picker; pick **Read Note**.
-2. Read Note: take a treble round, a bass round, and a "both" round; type Western + Korean answers; click a white key and a black key.
-3. Click the topbar Mode chip → switch to **Find Note**. Confirm: piano is hidden, tall staff renders with the chosen clef, 도 prompt + counter `0 / N`, tap on the staff places a note head (with ledger line if off-staff), tap the same Y to remove, Submit judges set equality.
+2. Read Note: take a treble round, a bass round, and a "both" round; type Western + Korean answers; click a white key and a black key. Score / streak / distribution should all update.
+3. Click the topbar Mode chip → switch to **Find Note**. Confirm:
+   - Piano is hidden; `.score` and `#distribution-panel` are hidden too.
+   - Tall staff renders with the chosen clef.
+   - 도 prompt + counter `0 / N`.
+   - Press-and-hold on the staff shows a colored preview marker; sliding up/down moves it step-by-step.
+   - Releasing on an empty position places a note (with ledger line if off-staff). Releasing on an existing note removes it (the preview turns red while hovering one).
+   - **Submit (correct)** → green wash, auto-advances after ~900 ms.
+   - **Submit (wrong)** → pink wash, placed notes recolored green/red, missed targets shown as ghost-green notes, button swaps to **Next**, no auto-advance.
+   - **Clear** wipes all placements mid-round.
 4. Settings: in Read Note the accidental slider is visible and language radio is hidden; in Find Note it's the opposite. Toggle Find Note language between 한글 and English — prompt swaps.
-5. Switch clef while in Find Note — staff redraws with the new clef, current question regenerates.
-6. Open the distribution panel; play ≥10 Read Note notes; verify bars + expected-uniform marker render. Find Note rounds do NOT affect this panel.
-7. Refresh — boots straight into the last-used mode, no picker.
-8. **For mobile-affecting changes**, also test the deployed Pages URL on iPhone — narrow viewport, no zoom on input focus, audio plays after first tap (silent switch off), extended piano scrolls horizontally.
+5. Switch clef while in Find Note — staff redraws with the new clef (treble A3–E6 vs bass C2–E4), current question regenerates.
+6. Refresh — boots straight into the last-used mode, no picker.
+7. **For mobile-affecting changes**, also test the deployed Pages URL on iPhone — narrow viewport, no zoom on input focus, audio plays after first tap (silent switch off), drag-place works with a finger (the `touch-action: none` on `.find-staff` is what keeps iOS from intercepting the drag as a scroll).
 
 ## Future roadmap
 
