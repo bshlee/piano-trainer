@@ -67,13 +67,15 @@ function renderFindStaff(container, clef, pitches, marks) {
   const pitchKey = (p) => `${p.step}${p.octave}`;
   const midiOf = (p) => (p.octave + 1) * 12 + STEP_TO_PC[p.step];
 
-  const width = Math.min((container.parentElement && container.parentElement.clientWidth) || 480, 480) - 12;
-  const height = 220; // tall enough for ~3 ledger lines above + 2 below
+  // Width: fill the parent (no cap). Re-rendered on resize.
+  const parentW = (container.parentElement && container.parentElement.clientWidth) || 480;
+  const width = Math.max(parentW - 16, 280);
+  const height = 170; // ~50 above stave (room for E6) + 40 stave + ~70 below (room for C2)
   const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
   renderer.resize(width, height);
   const ctx = renderer.getContext();
 
-  const staveTopY = 80; // leave room above for ledger lines (up to ~E6 / ~D4 below)
+  const staveTopY = 50;
   const stave = new VF.Stave(8, staveTopY, width - 16);
   stave.addClef(clef === 'bass' ? 'bass' : 'treble');
   stave.setContext(ctx).draw();

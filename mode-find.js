@@ -150,13 +150,90 @@ function snapClickYToMidi(clickY) {
   return midi;
 }
 
-function handleStaffClick(e) {
-  if (locked) return;
+// --- drag-to-place interaction ----------------------------------------------
+//
+// pointerdown shows a snap preview marker at the tapped pitch. pointermove
+// slides the preview up/down through diatonic positions. pointerup commits:
+// if the snapped pitch is already in selectedMidis we remove it, otherwise
+// we add it (and play audio). Removes the "tap-once-and-pray" precision
+// problem that made low-ledger-line notes (e.g. bass C2) hard to place.
+
+let dragPointerId = null;
+let dragMidi = null;
+
+function ensurePreviewEl() {
+  let el = findStaffEl.querySelector('.find-preview');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'find-preview';
+    findStaffEl.appendChild(el);
+  }
+  return el;
+}
+
+function clearPreviewEl() {
+  const el = findStaffEl.querySelector('.find-preview');
+  if (el) el.remove();
+}
+
+function showPreviewAtMidi(midi) {
+  if (!staffRef) return;
   const svg = findStaffEl.querySelector('svg');
   if (!svg) return;
+  const y = midiToStaffY(midi);
+  if (y == null) return;
+  const svgRect = svg.getBoundingClientRect();
+  const wrapRect = findStaffEl.getBoundingClientRect();
+  const el = ensurePreviewEl();
+  el.style.top = (svgRect.top - wrapRect.top + y) + 'px';
+  el.style.left = (svgRect.left - wrapRect.left + svgRect.width / 2) + 'px';
+  el.dataset.midi = String(midi);
+  el.classList.toggle('remove-hint', selectedMidis.has(midi));
+}
+
+function pointerY(e) {
+  const svg = findStaffEl.querySelector('svg');
+  if (!svg) return null;
   const rect = svg.getBoundingClientRect();
-  const clickY = e.clientY - rect.top;
-  const midi = snapClickYToMidi(clickY);
+  return e.clientY - rect.top;
+}
+
+function handlePointerDown(e) {
+  if (locked) return;
+  if (e.button !== undefined && e.button !== 0) return; // primary button / touch only
+  const y = pointerY(e);
+  if (y == null) return;
+  const midi = snapClickYToMidi(y);
+  if (midi == null) return;
+  e.preventDefault();
+  dragPointerId = e.pointerId;
+  dragMidi = midi;
+  try { findStaffEl.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+  showPreviewAtMidi(midi);
+}
+
+function handlePointerMove(e) {
+  if (dragPointerId === null || e.pointerId !== dragPointerId) return;
+  const y = pointerY(e);
+  if (y == null) return;
+  const midi = snapClickYToMidi(y);
+  if (midi == null) {
+    clearPreviewEl();
+    dragMidi = null;
+    return;
+  }
+  if (midi === dragMidi) return;
+  dragMidi = midi;
+  showPreviewAtMidi(midi);
+}
+
+function handlePointerUp(e) {
+  if (dragPointerId === null || e.pointerId !== dragPointerId) return;
+  const midi = dragMidi;
+  dragPointerId = null;
+  dragMidi = null;
+  clearPreviewEl();
+  try { findStaffEl.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
   if (midi == null) return;
 
   if (selectedMidis.has(midi)) {
@@ -165,6 +242,21 @@ function handleStaffClick(e) {
     selectedMidis.add(midi);
     window.PT_Audio.play(midi);
   }
+  updateCounter();
+  rerenderStaff(null);
+}
+
+function handlePointerCancel(e) {
+  if (e.pointerId !== dragPointerId) return;
+  dragPointerId = null;
+  dragMidi = null;
+  clearPreviewEl();
+}
+
+function clearSelection() {
+  if (locked) return;
+  if (selectedMidis.size === 0) return;
+  selectedMidis.clear();
   updateCounter();
   rerenderStaff(null);
 }
@@ -216,8 +308,15 @@ function handleResize() {
   rerenderStaff(null);
 }
 
-findStaffEl.addEventListener('click', handleStaffClick);
+findStaffEl.addEventListener('pointerdown', handlePointerDown);
+findStaffEl.addEventListener('pointermove', handlePointerMove);
+findStaffEl.addEventListener('pointerup', handlePointerUp);
+findStaffEl.addEventListener('pointercancel', handlePointerCancel);
+findStaffEl.addEventListener('lostpointercapture', handlePointerCancel);
 findSubmitBtn.addEventListener('click', submit);
+
+const findClearBtn = document.getElementById('find-clear');
+if (findClearBtn) findClearBtn.addEventListener('click', clearSelection);
 
 // Inverse of snapClickYToMidi — used by tests to drive the staff click handler
 // at a precise pitch. Returns Y relative to the staff SVG.

@@ -163,6 +163,14 @@
     touch-action: manipulation;
   }
   .input-row button.wide { flex: 1; padding: 14px 18px; }
+  .input-row button.ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--muted);
+    font-weight: 600;
+    padding: 12px 16px;
+  }
+  .input-row button.ghost:active { background: rgba(255,255,255,0.06); }
 
   /* --- piano --- */
   .piano {
@@ -412,13 +420,30 @@
     margin-top: 8px;
   }
   .find-staff {
+    position: relative;
     cursor: crosshair;
-    touch-action: manipulation;
+    touch-action: none;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
     -webkit-user-select: none;
   }
   .find-staff svg { display: block; max-width: 100%; height: auto; }
+  .find-preview {
+    position: absolute;
+    width: 18px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(123, 140, 255, 0.55);
+    border: 1.5px solid var(--accent);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 2;
+    transition: top 50ms ease-out;
+  }
+  .find-preview.remove-hint {
+    background: rgba(248, 113, 113, 0.45);
+    border-color: var(--wrong);
+  }
   .find-staff.correct { background: #d6f5d6; border-radius: 10px; }
   .find-staff.wrong { background: #fbd6d6; border-radius: 10px; }
   .find-feedback {
@@ -436,6 +461,8 @@
   body[data-mode="read"] #find-note { display: none; }
   body[data-mode="find"] #read-note { display: none; }
   body[data-mode="find"] #piano { display: none; }
+  body[data-mode="find"] .score { display: none; }
+  body[data-mode="find"] #distribution-panel { display: none; }
   body[data-mode="read"] .mode-find-only { display: none; }
   body[data-mode="find"] .mode-read-only { display: none; }
 
@@ -572,6 +599,7 @@
       <div class="find-feedback" id="find-feedback"></div>
 
       <div class="input-row" style="margin-top: 14px;">
+        <button type="button" id="find-clear" class="ghost">Clear</button>
         <button id="find-submit" class="wide">Submit</button>
       </div>
     </section>
