@@ -17,7 +17,7 @@ Live at **https://bshlee.github.io/piano-trainer/** (GitHub Pages, deploys from 
 | File | Role |
 |---|---|
 | `index.html` | Markup, inline `<style>`, script tags. Loads VexFlow from `cdn.jsdelivr.net`. Hosts the mode-picker overlay and both mode sections (`#read-note`, `#find-note`). |
-| `render.js`  | `window.renderNote(container, pitch)` draws clef + one note. `window.renderClefOnly(container, clef)` draws an empty staff with just the clef. `window.renderFindStaff(container, clef, pitches, marks)` draws a 200-px-tall staff with N notes (whole notes, displayed width capped at 480 px, centered via `.find-staff svg { margin: 0 auto }`). Marks drive feedback colors: `'correct'` (green), `'wrong'` (red), `'miss'` (ghost-green; added to the voice even if not in `pitches`). Internally calls `ctx.scale(SCALE, SCALE)` with `SCALE = 1.3` so glyphs and line spacing render 30% bigger — see the "Rendering & coordinate system" section below. Returns `{bottomLineY, stepPx, svgWidth, svgHeight, noteXs}` in **SVG-canvas (post-scale) units** so the caller can use them directly against click coords. |
+| `render.js`  | `window.renderNote(container, pitch)` draws clef + one note (Read Note, single-note mode). `window.renderClefOnly(container, clef)` draws an empty staff with just the clef. `window.renderStrip(container, pitches, currentIndex)` draws N (1–4) whole notes side-by-side on a single-clef staff for Read Note's multi-note strip; when N > 1 a small blue triangular caret is drawn under the note at `currentIndex` to mark the active one. `window.renderFindStaff(container, clef, pitches, marks)` draws a 200-px-tall staff with N notes for Find Note (whole notes, displayed width capped at 480 px, centered via `.find-staff svg { margin: 0 auto }`). `marks` drive feedback colors: `'correct'` (green), `'wrong'` (red), `'miss'` (ghost-green; added to the voice even if not in `pitches`). `renderFindStaff` internally calls `ctx.scale(SCALE, SCALE)` with `SCALE = 1.3` so glyphs and line spacing render 30% bigger — see the "Rendering & coordinate system" section below — and returns `{bottomLineY, stepPx, svgWidth, svgHeight, noteXs}` in **SVG-canvas (post-scale) units**. `renderStrip` / `renderNote` use native VexFlow units (no `ctx.scale`). |
 | `app.js`     | Shared infrastructure + Read Note mode: pitch utils, piano UI (`buildPiano(range)`), Web Audio synth, persistence, distribution stats, mode picker, mode dispatch. Exposes `window.PT_Audio`, `PT_Pitch`, `PT_Piano`, `PT_Settings`. |
 | `mode-find.js` | Find Note mode: prompts a natural note, computes target MIDIs in the clef's range, listens for pointer events on the staff SVG (pointerdown → preview marker → pointerup → toggle), submits/judges, manages the Submit↔Next button swap. Exposes `window.PT_FindNote`. |
 | `README.md`  | Human-facing docs (features, usage, dev setup). |
@@ -50,6 +50,10 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 - **Note ranges:** Treble `C4`–`C6`, Bass `C2`–`C4` (one ledger line above/below each staff).
 - **Accidentals default to 30% probability**, slider-adjustable.
 - **Piano keyboard:** one octave C4–C5, flex-fills the container.
+- **Multi-note strip (1–4 notes)** — "Notes per round" slider in Settings. State lives in `currentStrip` (array) + `currentIndex`. One clef is picked for the whole strip (mixed clefs would require a grand staff). Per-question flow:
+  - `N === 1`: original flashcard behavior — answer reveals correct pitch on wrong, auto-advances after the delay.
+  - `N > 1`: caret marks the active note. Correct answer flashes green and advances the caret to the next note; finishing the last note rolls a fresh strip. **Wrong answer = retry**: the staff flashes pink with `✗ try again` (the correct pitch is *not* revealed — the whole point of strip mode is to actually learn each note), streak resets, but the caret stays on the same note until the user gets it right. Stats are per-note (each attempt counts toward `total`; each correct attempt counts toward `correct` and `streak`).
+  - Slider change regenerates the current strip immediately so the new size takes effect without waiting for next question.
 
 ### Find Note mode
 - Prompt is a natural note name (default 도, toggle to `C` in Settings). Naturals only — accidentals deliberately excluded.
@@ -108,9 +112,10 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 
 ## localStorage keys
 
-- `piano-trainer:settings:v1` — `{ clefMode, accidentalRate, showLabels, mode, findNoteLang }`
+- `piano-trainer:settings:v1` — `{ clefMode, accidentalRate, showLabels, mode, findNoteLang, notesPerStrip }`
   - `mode`: `'read' | 'find' | null` (null on first launch → triggers mode picker)
   - `findNoteLang`: `'ko' | 'en'` (default `'ko'`)
+  - `notesPerStrip`: integer 1–4, default `1` (Read Note multi-note strip size)
   - When adding new fields, prefer additive defaults over bumping `v1` so existing stats survive.
 - `piano-trainer:stats:v1` — `{ correct, total, streak, best }` (Read Note only)
 - `piano-trainer:dist:v1` — note-frequency distribution `{ byNote, naturals, sharps, flats, treble, bass, total }` (Read Note only)
@@ -160,8 +165,9 @@ GitHub Pages config: source = "Deploy from a branch", branch = `main`, folder = 
 ## Verification before claiming a change works
 
 1. Open `index.html` in Chrome. First-ever load shows the mode picker; pick **Read Note**.
-2. Read Note: take a treble round, a bass round, and a "both" round; type Western + Korean answers; click a white key and a black key. Score / streak / distribution should all update.
-3. Click the topbar Mode chip → switch to **Find Note**. Confirm:
+2. Read Note (single-note): take a treble round, a bass round, and a "both" round; type Western + Korean answers; click a white key and a black key. Score / streak / distribution should all update. Wrong answer reveals the correct pitch and auto-advances.
+3. Read Note (multi-note): bump "Notes per round" to 3 in Settings. The staff shows three notes side-by-side with a blue caret under the first. Answer correctly → caret slides to the next note (no new strip yet); finish all three → a new strip rolls in. Answer wrong → pink wash + `✗ try again` (no answer reveal), caret stays on the same note. Streak resets to 0 on wrong but doesn't on caret-advance. Slider change while answering should regenerate the strip in place.
+4. Click the topbar Mode chip → switch to **Find Note**. Confirm:
    - Piano is hidden; `.score` and `#distribution-panel` are hidden too.
    - Tall staff renders with the chosen clef.
    - 도 prompt + counter `0 / N`.
@@ -171,16 +177,18 @@ GitHub Pages config: source = "Deploy from a branch", branch = `main`, folder = 
    - **Submit (correct)** → green wash, auto-advances after ~900 ms.
    - **Submit (wrong)** → pink wash, placed notes recolored green/red, missed targets shown as ghost-green notes, button swaps to **Next**, no auto-advance.
    - **Undo** rewinds the last add/remove/move. **Clear** wipes all placements mid-round and resets undo history.
-4. Settings: in Read Note the accidental slider is visible and language radio is hidden; in Find Note it's the opposite. Toggle Find Note language between 한글 and English — prompt swaps.
-5. Switch clef while in Find Note — staff redraws with the new clef (treble A3–E6 vs bass C2–E4), current question regenerates.
-6. Refresh — boots straight into the last-used mode, no picker.
-7. **For mobile-affecting changes**, also test the deployed Pages URL on iPhone — narrow viewport, no zoom on input focus, audio plays after first tap (silent switch off), drag-place works with a finger (the `touch-action: none` on `.find-staff` is what keeps iOS from intercepting the drag as a scroll).
+5. Settings: in Read Note the "Notes per round" slider + accidental slider are visible and the language radio is hidden; in Find Note it's the opposite. Toggle Find Note language between 한글 and English — prompt swaps.
+6. Switch clef while in Find Note — staff redraws with the new clef (treble A3–E6 vs bass C2–E4), current question regenerates.
+7. Refresh — boots straight into the last-used mode, no picker. `notesPerStrip` persists across refresh.
+8. **For mobile-affecting changes**, also test the deployed Pages URL on iPhone — narrow viewport, no zoom on input focus, audio plays after first tap (silent switch off), drag-place works with a finger (the `touch-action: none` on `.find-staff` is what keeps iOS from intercepting the drag as a scroll).
 
 ## Future roadmap
 
 **Planned add-ons for Read Note** (designed, not yet implemented — see `/Users/shlee/.claude/plans/now-i-want-to-modular-neumann.md`):
-- **Mic Input** — accept piano-played answers via `getUserMedia` + autocorrelation/YIN pitch detection. Toggle in Settings; gated by user gesture for iOS.
-- **Multi-Note Strip** — sight-reading practice with 1–6 notes side-by-side; highlight the current note; advance on correct answer. Synergizes with Mic Input.
+- **Mic Input** — accept piano-played answers via `getUserMedia` + autocorrelation/YIN pitch detection. Toggle in Settings; gated by user gesture for iOS. Synergizes with the multi-note strip (true sight-reading: eye on the next note while playing the current one).
+
+**Recently shipped** (was on this list):
+- **Multi-Note Strip** — 1–4 notes per strip with retry-on-wrong + caret-marked current note. See Read Note design section above.
 
 **Other confirmed (don't build without confirmation):**
 - Interval recognition mode

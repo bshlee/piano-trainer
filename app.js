@@ -140,6 +140,8 @@ const accSlider = document.getElementById('accidental-rate');
 const showLabelsCheckbox = document.getElementById('show-labels');
 const pianoEl = document.getElementById('piano');
 const accSliderVal = document.getElementById('accidental-rate-val');
+const notesPerStripEl = document.getElementById('notes-per-strip');
+const notesPerStripValEl = document.getElementById('notes-per-strip-val');
 const distPanel = document.getElementById('distribution-panel');
 const distSummary = document.getElementById('dist-summary');
 const distChart = document.getElementById('dist-chart');
@@ -327,21 +329,27 @@ const DIST_KEY = 'piano-trainer:dist:v1';
 const settings = loadSettings();
 const stats = loadStats();
 const distribution = loadDistribution();
-let currentPitch = null;
+// Read Note holds an array of pitches (the "strip") and an index into it.
+// notesPerStrip === 1 collapses to the original single-note flashcard flow;
+// notesPerStrip > 1 enables retry-on-wrong, advance-on-correct sight-reading.
+let currentStrip = null;     // Array<{step, octave, alter, clef}>
+let currentIndex = 0;
 let locked = false; // briefly true between answer and next question
 
 function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    const nps = parseInt(s.notesPerStrip, 10);
     return {
       clefMode: s.clefMode || 'treble',
       accidentalRate: typeof s.accidentalRate === 'number' ? s.accidentalRate : 0.30,
       showLabels: typeof s.showLabels === 'boolean' ? s.showLabels : false,
       mode: (s.mode === 'read' || s.mode === 'find') ? s.mode : null,
       findNoteLang: s.findNoteLang === 'en' ? 'en' : 'ko',
+      notesPerStrip: Number.isFinite(nps) && nps >= 1 && nps <= 4 ? nps : 1,
     };
   } catch {
-    return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false, mode: null, findNoteLang: 'ko' };
+    return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false, mode: null, findNoteLang: 'ko', notesPerStrip: 1 };
   }
 }
 function saveSettings() {
@@ -413,11 +421,33 @@ function newQuestion() {
   feedbackEl.className = 'feedback';
   staffWrap.classList.remove('correct','wrong');
   answerInput.value = '';
-  currentPitch = randomPitch(settings.clefMode, settings.accidentalRate);
-  recordPitch(currentPitch);
-  renderNote(staffEl, currentPitch);
+
+  // Pick the clef once for the whole strip — mixing clefs in a single staff
+  // would be a different visual contract (grand staff). Read Note keeps to
+  // one clef per strip and lets the "both" setting alternate per question.
+  const stripClef = settings.clefMode === 'both'
+    ? (Math.random() < 0.5 ? 'treble' : 'bass')
+    : settings.clefMode;
+
+  const N = Math.max(1, Math.min(4, settings.notesPerStrip || 1));
+  currentStrip = [];
+  for (let i = 0; i < N; i++) {
+    currentStrip.push(randomPitch(stripClef, settings.accidentalRate));
+  }
+  currentIndex = 0;
+  for (const p of currentStrip) recordPitch(p);
+  renderCurrentStrip();
   // Don't auto-focus on mobile (would pop keyboard). Focus only if no touch capability detected.
   if (!('ontouchstart' in window)) answerInput.focus();
+}
+
+function renderCurrentStrip() {
+  if (!currentStrip || currentStrip.length === 0) return;
+  if (currentStrip.length === 1) {
+    renderNote(staffEl, currentStrip[0]);
+  } else {
+    renderStrip(staffEl, currentStrip, currentIndex);
+  }
 }
 
 function submitTyped() {
@@ -441,29 +471,70 @@ function submitPitchClass(pc, btnEl) {
 }
 
 function judge(answerPc) {
-  if (!currentPitch) return;
-  const targetPc = pitchClass(currentPitch.step, currentPitch.alter);
+  const cur = currentStrip && currentStrip[currentIndex];
+  if (!cur) return;
+  const targetPc = pitchClass(cur.step, cur.alter);
   const ok = answerPc === targetPc;
+  const N = currentStrip.length;
+  const stripMode = N > 1;
+  const isLast = currentIndex + 1 >= N;
 
   locked = true;
   stats.total += 1;
+
   if (ok) {
     stats.correct += 1;
     stats.streak += 1;
     if (stats.streak > stats.best) stats.best = stats.streak;
-    feedbackEl.textContent = '✓ ' + describePitch(currentPitch);
+    feedbackEl.textContent = '✓ ' + describePitch(cur);
     feedbackEl.className = 'feedback correct';
     staffWrap.classList.add('correct');
-  } else {
-    stats.streak = 0;
-    feedbackEl.textContent = '✗ was ' + describePitch(currentPitch);
-    feedbackEl.className = 'feedback wrong';
-    staffWrap.classList.add('wrong');
+    saveStats();
+    renderStats();
+    if (isLast) {
+      // Strip complete → roll a fresh one.
+      setTimeout(newQuestion, 600);
+    } else {
+      // Advance the highlight within the same strip; keep streak / score.
+      setTimeout(() => {
+        currentIndex += 1;
+        locked = false;
+        staffWrap.classList.remove('correct', 'wrong');
+        feedbackEl.textContent = '';
+        feedbackEl.className = 'feedback';
+        answerInput.value = '';
+        renderCurrentStrip();
+      }, 600);
+    }
+    return;
   }
-  saveStats();
-  renderStats();
 
-  setTimeout(newQuestion, ok ? 600 : 1200);
+  // Wrong answer.
+  stats.streak = 0;
+  staffWrap.classList.add('wrong');
+  if (stripMode) {
+    // Don't reveal — strip mode is retry-until-correct so the user has to
+    // actually identify the note.
+    feedbackEl.textContent = '✗ try again';
+    feedbackEl.className = 'feedback wrong';
+    saveStats();
+    renderStats();
+    setTimeout(() => {
+      locked = false;
+      staffWrap.classList.remove('wrong');
+      feedbackEl.textContent = '';
+      feedbackEl.className = 'feedback';
+      answerInput.value = '';
+    }, 1200);
+  } else {
+    // Single-note flashcard: reveal the answer and advance, matching the
+    // original Read Note flow.
+    feedbackEl.textContent = '✗ was ' + describePitch(cur);
+    feedbackEl.className = 'feedback wrong';
+    saveStats();
+    renderStats();
+    setTimeout(newQuestion, 1200);
+  }
 }
 
 function renderDistribution() {
@@ -585,6 +656,15 @@ accSlider.addEventListener('input', () => {
   saveSettings();
 });
 
+notesPerStripEl.addEventListener('input', () => {
+  const n = Math.max(1, Math.min(4, parseInt(notesPerStripEl.value, 10) || 1));
+  settings.notesPerStrip = n;
+  notesPerStripValEl.textContent = String(n);
+  saveSettings();
+  // Regenerate the current question so the new size takes effect immediately.
+  if (settings.mode === 'read') newQuestion();
+});
+
 showLabelsCheckbox.addEventListener('change', () => {
   settings.showLabels = showLabelsCheckbox.checked;
   saveSettings();
@@ -650,6 +730,8 @@ window.PT_Settings = {
 syncClefToggle();
 accSlider.value = String(Math.round(settings.accidentalRate * 100));
 accSliderVal.textContent = accSlider.value + '%';
+notesPerStripEl.value = String(settings.notesPerStrip);
+notesPerStripValEl.textContent = String(settings.notesPerStrip);
 showLabelsCheckbox.checked = settings.showLabels;
 langRadios.forEach(r => { r.checked = (r.value === settings.findNoteLang); });
 renderStats();
@@ -665,8 +747,8 @@ let resizeRaf = 0;
 window.addEventListener('resize', () => {
   cancelAnimationFrame(resizeRaf);
   resizeRaf = requestAnimationFrame(() => {
-    if (settings.mode === 'read' && currentPitch) {
-      renderNote(staffEl, currentPitch);
+    if (settings.mode === 'read' && currentStrip && currentStrip.length > 0) {
+      renderCurrentStrip();
     } else if (settings.mode === 'find' && window.PT_FindNote) {
       window.PT_FindNote.handleResize();
     }

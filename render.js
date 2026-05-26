@@ -165,7 +165,64 @@ function renderFindStaff(container, clef, pitches, marks) {
   };
 }
 
+// Render N notes side-by-side on a single staff for Read Note's multi-note
+// strip mode. All pitches must share the same clef. `currentIndex` is the
+// note the user is currently answering — when N > 1, a small triangular
+// caret is drawn under it as a positional cue (per the design decision to
+// keep note heads black rather than recolor them). N == 1 falls through to
+// a clean look identical to `renderNote` — no caret, no spreading.
+function renderStrip(container, pitches, currentIndex) {
+  container.innerHTML = '';
+  if (!pitches || pitches.length === 0) return;
+
+  const clef = pitches[0].clef === 'bass' ? 'bass' : 'treble';
+  const width = Math.min((container.parentElement && container.parentElement.clientWidth - 20) || 480, 480);
+  const height = 180;
+
+  const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
+  renderer.resize(width, height);
+  const ctx = renderer.getContext();
+
+  const stave = new VF.Stave(10, 20, width - 20);
+  stave.addClef(clef);
+  stave.setContext(ctx).draw();
+
+  const notes = pitches.map((p) => {
+    const accChar = p.alter === 1 ? '#' : p.alter === -1 ? 'b' : '';
+    const key = `${p.step.toLowerCase()}${accChar}/${p.octave}`;
+    const note = new VF.StaveNote({ clef, keys: [key], duration: 'w' });
+    if (p.alter !== 0) note.addModifier(new VF.Accidental(p.alter === 1 ? '#' : 'b'), 0);
+    return note;
+  });
+
+  // ~80 px per note for spacing; capped so dense strips still fit narrow screens.
+  const formatWidth = Math.min(Math.max(notes.length * 80 + 40, 120), width - 80);
+  const voice = new VF.Voice({ num_beats: notes.length, beat_value: 1 });
+  voice.addTickables(notes);
+  new VF.Formatter().joinVoices([voice]).format([voice], formatWidth);
+  voice.draw(ctx, stave);
+
+  // Caret under the current note (multi-note only). Drawn as a raw SVG
+  // <path> appended to the rendered SVG — VexFlow's SVGContext doesn't
+  // expose a polygon helper and this avoids fighting its group structure.
+  if (pitches.length > 1 && currentIndex >= 0 && currentIndex < notes.length) {
+    const note = notes[currentIndex];
+    const x = note.getAbsoluteX() + 7; // ~half a whole-note head
+    const yBase = height - 10;          // caret base near bottom of canvas
+    const yTip = yBase - 12;            // pointer extends up toward the staff
+    const half = 7;
+    const svg = container.querySelector('svg');
+    if (svg) {
+      const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pathEl.setAttribute('d', `M ${x - half} ${yBase} L ${x + half} ${yBase} L ${x} ${yTip} Z`);
+      pathEl.setAttribute('fill', '#7b8cff');
+      svg.appendChild(pathEl);
+    }
+  }
+}
+
 window.renderNote = renderNote;
 window.renderClefOnly = renderClefOnly;
 window.renderFindStaff = renderFindStaff;
+window.renderStrip = renderStrip;
 })();

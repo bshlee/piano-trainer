@@ -620,6 +620,11 @@
     <details class="settings">
       <summary>Settings</summary>
       <div class="row mode-read-only">
+        <label for="notes-per-strip" style="min-width: 110px;">Notes per round</label>
+        <input type="range" id="notes-per-strip" min="1" max="4" step="1" value="1">
+        <span id="notes-per-strip-val" style="min-width:40px; text-align:right;">1</span>
+      </div>
+      <div class="row mode-read-only">
         <label for="accidental-rate" style="min-width: 110px;">Accidentals</label>
         <input type="range" id="accidental-rate" min="0" max="100" step="5" value="30">
         <span id="accidental-rate-val" style="min-width:40px; text-align:right;">30%</span>

@@ -13,6 +13,7 @@ First launch shows a mode picker; pick once and it sticks. The topbar **Mode chi
 ### Read Note — given a note on the staff, name it
 - Treble / Bass / Both clef modes.
 - Accidentals (♯ / ♭) at configurable probability (default 30%).
+- **Multi-note strip** — Settings has a "Notes per round" slider (1–4). At 1 it's the classic flashcard. At 2–4 the staff shows that many notes side-by-side with a blue caret under the active one; answer correctly to advance the caret, wrong answers stay on the same note (with `✗ try again` — the correct pitch is *not* revealed, so you actually have to identify it).
 - Two answer methods:
   - **Type** the note: Western (`C`, `D`, …, `B`) or Korean solfège (`도`, `레`, …, `시`), optionally with `#` / `b`. Press Enter to submit.
   - **Tap/click** an on-screen piano (one octave, anchored at middle C).
@@ -102,8 +103,7 @@ Not a planned feature; mention if you decide you want it.
 
 Designed but not yet built (see [CLAUDE.md → Future roadmap](./CLAUDE.md#future-roadmap)):
 
-- **Mic input** for Read Note — play the answer on a real piano instead of typing/clicking
-- **Multi-note strip** for Read Note — 1–6 notes side-by-side for true sight-reading practice
+- **Mic input** for Read Note — play the answer on a real piano instead of typing/clicking, pairs with the multi-note strip for true sight-reading practice
 
 Other ideas (don't have to be in this order):
 
