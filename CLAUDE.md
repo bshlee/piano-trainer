@@ -17,9 +17,9 @@ Live at **https://bshlee.github.io/piano-trainer/** (GitHub Pages, deploys from 
 | File | Role |
 |---|---|
 | `index.html` | Markup, inline `<style>`, script tags. Loads VexFlow from `cdn.jsdelivr.net`. Hosts the mode-picker overlay and both mode sections (`#read-note`, `#find-note`). |
-| `render.js`  | `window.renderNote(container, pitch)` draws clef + one note. `window.renderClefOnly(container, clef)` draws an empty staff with just the clef (used by Find Note prompt). |
-| `app.js`     | Shared infrastructure + Read Note mode: pitch utils, piano UI (`buildPiano(range, {extended})`), Web Audio synth, persistence, distribution stats, mode picker, mode dispatch. Exposes `window.PT_Audio`, `PT_Pitch`, `PT_Piano`, `PT_Settings`. |
-| `mode-find.js` | Find Note mode: prompts a natural note, computes target MIDIs in the clef's range, tracks tap-toggle selection, submits/judges. Exposes `window.PT_FindNote`. |
+| `render.js`  | `window.renderNote(container, pitch)` draws clef + one note. `window.renderClefOnly(container, clef)` draws an empty staff with just the clef. `window.renderFindStaff(container, clef, pitches, marks)` draws a tall staff with N placed pitches (whole notes spread horizontally) — returns `{bottomLineY, stepPx}` so the caller can map click Y → diatonic step. |
+| `app.js`     | Shared infrastructure + Read Note mode: pitch utils, piano UI (`buildPiano(range)`), Web Audio synth, persistence, distribution stats, mode picker, mode dispatch. Exposes `window.PT_Audio`, `PT_Pitch`, `PT_Piano`, `PT_Settings`. |
+| `mode-find.js` | Find Note mode: prompts a natural note, computes target MIDIs in the clef's range, listens for clicks on the staff SVG, snaps click Y to the nearest diatonic step, toggles placement, submits/judges. Exposes `window.PT_FindNote`. |
 | `README.md`  | Human-facing docs (features, usage, dev setup). |
 | `SETUP.md`   | Step-by-step new-device onboarding (clone, SSH key, push). |
 
@@ -53,13 +53,13 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 
 ### Find Note mode
 - Prompt is a natural note name (default 도, toggle to `C` in Settings). Naturals only — accidentals deliberately excluded.
-- Task: tap **every** key matching that pitch class within the clef's range; counter shows `selected / target` so the user knows how many to find.
-- **Clef ranges** (wider than Read Note to give ledger-line keys to practice):
+- Task: **tap the staff** at every position matching that pitch class within the clef's range. Click Y snaps to the nearest line/space (5 px per diatonic step, VexFlow default). Counter shows `placed / target`.
+- **Piano keyboard is hidden** in this mode (`body[data-mode="find"] #piano { display: none }`). The drill is reading staff positions, not finding piano keys.
+- **Clef ranges** (extend a few ledger lines beyond the staff so users practice ledger-line reading):
   - Treble: A3–E6 (MIDI 57–88)
   - Bass: C2–E4 (MIDI 36–64)
   - "Both" clef → picks one randomly per question.
-- **Piano keyboard:** extended-mode view (white keys fixed at 44px, horizontal scroll). Auto-scrolls to center the first target key.
-- **Selection UX:** tap toggles `.selected` + plays audio. Submit button judges set equality. Auto-advance to the next question after feedback.
+- **Placement UX:** tap empty area on staff → note head appears at snapped position (with ledger line if outside the staff) + audio plays. Tap the same Y again → removes the placement. Submit button judges set equality. On wrong submit, placed notes color red (wrong picks) or green (correct picks); feedback text reports `expected N · missed N · X wrong`. Auto-advance to next question after feedback.
 - **Distribution panel does NOT track Find Note rounds** — only Read Note generates pitched questions.
 
 ### Mode picker
@@ -122,9 +122,9 @@ GitHub Pages config: source = "Deploy from a branch", branch = `main`, folder = 
 
 1. Open `index.html` in Chrome. First-ever load shows the mode picker; pick **Read Note**.
 2. Read Note: take a treble round, a bass round, and a "both" round; type Western + Korean answers; click a white key and a black key.
-3. Click the topbar Mode chip → switch to **Find Note**. Confirm: extended piano (scrollable), 도 prompt, counter `0 / N`, tap-toggle selection, Submit judges set equality.
+3. Click the topbar Mode chip → switch to **Find Note**. Confirm: piano is hidden, tall staff renders with the chosen clef, 도 prompt + counter `0 / N`, tap on the staff places a note head (with ledger line if off-staff), tap the same Y to remove, Submit judges set equality.
 4. Settings: in Read Note the accidental slider is visible and language radio is hidden; in Find Note it's the opposite. Toggle Find Note language between 한글 and English — prompt swaps.
-5. Switch clef while in Find Note — piano range rebuilds (treble A3–E6 vs bass C2–E4); current question regenerates.
+5. Switch clef while in Find Note — staff redraws with the new clef, current question regenerates.
 6. Open the distribution panel; play ≥10 Read Note notes; verify bars + expected-uniform marker render. Find Note rounds do NOT affect this panel.
 7. Refresh — boots straight into the last-used mode, no picker.
 8. **For mobile-affecting changes**, also test the deployed Pages URL on iPhone — narrow viewport, no zoom on input focus, audio plays after first tap (silent switch off), extended piano scrolls horizontally.

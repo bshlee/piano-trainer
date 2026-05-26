@@ -29,13 +29,10 @@ const RANGES = {
   bass:   { lowest: { step:'C', octave:2 }, highest: { step:'C', octave:4 } },
 };
 
-// Piano keyboard MIDI ranges per mode.
-// Read Note keeps the original single-octave C4–C5 visual.
-// Find Note extends beyond the staff range so ledger-line keys are tappable.
+// Piano keyboard MIDI range. Read Note uses one octave (C4..C5); Find Note
+// hides the piano entirely (it uses a tappable staff instead).
 const PIANO_RANGES = {
-  read: { low: 60, high: 72 },            // C4..C5
-  findTreble: { low: 57, high: 88 },      // A3..E6
-  findBass:   { low: 36, high: 64 },      // C2..E4
+  read: { low: 60, high: 72 }, // C4..C5 inclusive (closing C5)
 };
 
 // ---------- pitch utilities ----------
@@ -154,19 +151,12 @@ const langRadios = document.querySelectorAll('input[name="find-note-lang"]');
 
 // ---------- piano keyboard ----------
 //
-// buildPiano(range, {extended}) builds white + black keys for a given MIDI range.
-// - Single-octave (read mode): white keys flex-fill the container; blacks use % positions.
-// - Extended (find mode): whites are fixed-width 44px and the piano scrolls horizontally;
-//   blacks use pixel positions so they land between the right whites regardless of scroll.
+// buildPiano(range) builds white + black keys for a given MIDI range. White keys
+// flex-fill the container; black keys are positioned via percentage offsets
+// relative to the white-key grid. Both range endpoints should be white pitch
+// classes (start-on-white guarantees the % math for the first black is sane).
 
-const WHITE_PX = 44;
-const WHITE_GAP_PX = 2;
-const BLACK_PX = 30;
-
-function buildPiano(range, opts) {
-  const extended = !!(opts && opts.extended);
-  pianoEl.classList.toggle('extended', extended);
-
+function buildPiano(range) {
   whiteRow.innerHTML = '';
   blackRow.innerHTML = '';
 
@@ -194,51 +184,22 @@ function buildPiano(range, opts) {
     whiteRow.appendChild(btn);
   }
 
-  if (extended) {
-    for (const k of blacks) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'black';
-      btn.dataset.pc = k.pc;
-      btn.dataset.midi = k.midi;
-      // Boundary between whites[afterWhite] and whites[afterWhite + 1]:
-      const boundary = k.afterWhite * (WHITE_PX + WHITE_GAP_PX) + WHITE_PX + WHITE_GAP_PX / 2;
-      btn.style.left = (boundary - BLACK_PX / 2) + 'px';
-      btn.style.width = BLACK_PX + 'px';
-      btn.setAttribute('aria-label', k.letter);
-      btn.addEventListener('click', () => handleKey(k.pc, k.midi, btn));
-      blackRow.appendChild(btn);
-    }
-  } else {
-    const N = whites.length;
-    const pctPerWhite = 100 / N;
-    const blackWidthPct = 9;
-    for (const k of blacks) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'black';
-      btn.dataset.pc = k.pc;
-      btn.dataset.midi = k.midi;
-      btn.style.left = ((k.afterWhite + 1) * pctPerWhite - blackWidthPct / 2) + '%';
-      btn.setAttribute('aria-label', k.letter);
-      btn.addEventListener('click', () => handleKey(k.pc, k.midi, btn));
-      blackRow.appendChild(btn);
-    }
+  const N = whites.length;
+  const pctPerWhite = 100 / N;
+  const blackWidthPct = 9;
+  for (const k of blacks) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'black';
+    btn.dataset.pc = k.pc;
+    btn.dataset.midi = k.midi;
+    btn.style.left = ((k.afterWhite + 1) * pctPerWhite - blackWidthPct / 2) + '%';
+    btn.setAttribute('aria-label', k.letter);
+    btn.addEventListener('click', () => handleKey(k.pc, k.midi, btn));
+    blackRow.appendChild(btn);
   }
 
   applyShowLabels();
-}
-
-function pianoKeyByMidi(midi) {
-  return pianoEl.querySelector(`button[data-midi="${midi}"]`);
-}
-
-function scrollPianoToMidi(midi) {
-  const btn = pianoKeyByMidi(midi);
-  if (!btn) return;
-  // Center the target key within the visible viewport of .piano.
-  const target = btn.offsetLeft + btn.offsetWidth / 2 - pianoEl.clientWidth / 2;
-  pianoEl.scrollLeft = Math.max(0, target);
 }
 
 // ---------- audio (Web Audio API) ----------
@@ -348,13 +309,11 @@ function playMidi(midi) {
   noise.stop(t0 + thudDur);
 }
 
-// Piano key click router. In Read Note: play + submit pitch class.
-// In Find Note: delegate to PT_FindNote which manages its own selection state.
+// Piano-key click handler. Used by Read Note only — Find Note hides the piano
+// (and uses a tappable staff instead). Guard against late clicks during a mode
+// swap when the piano may still be visible for a frame.
 function handleKey(pc, midi, btnEl) {
-  if (settings.mode === 'find' && window.PT_FindNote) {
-    window.PT_FindNote.toggleKey(midi, btnEl);
-    return;
-  }
+  if (settings.mode === 'find') return;
   playMidi(midi);
   submitPitchClass(pc, btnEl);
 }
@@ -566,7 +525,7 @@ function applyMode(mode) {
   if (mode === 'find') {
     if (window.PT_FindNote) window.PT_FindNote.start();
   } else {
-    buildPiano(PIANO_RANGES.read, { extended: false });
+    buildPiano(PIANO_RANGES.read);
     newQuestion();
   }
 }
@@ -681,8 +640,6 @@ window.PT_Pitch = {
 window.PT_Piano = {
   build: buildPiano,
   ranges: PIANO_RANGES,
-  keyByMidi: pianoKeyByMidi,
-  scrollToMidi: scrollPianoToMidi,
 };
 window.PT_Settings = {
   get: () => settings,

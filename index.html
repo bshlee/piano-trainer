@@ -16,10 +16,8 @@
     --wrong: #f87171;
     --white-key: #f8f8fb;
     --white-key-active: #d8dcff;
-    --white-key-selected: #b5c0ff;
     --black-key: #2a2a3e;
     --black-key-active: #5560a8;
-    --black-key-selected: #5560a8;
     --key-border: #1a1a2e;
     --shadow: 0 2px 8px rgba(0,0,0,0.25);
   }
@@ -173,18 +171,11 @@
     user-select: none;
     -webkit-user-select: none;
     touch-action: manipulation;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
   }
-  .piano.extended { touch-action: pan-x; }
   .piano-inner {
     position: relative;
     height: 100%;
     width: 100%;
-  }
-  .piano.extended .piano-inner {
-    width: max-content;
   }
   .piano .row {
     display: flex;
@@ -210,16 +201,8 @@
     transition: background 80ms;
     min-width: 0;
   }
-  .piano.extended .white {
-    flex: 0 0 44px;
-    min-width: 44px;
-    max-width: 44px;
-  }
   .white:active, .white.flash {
     background: var(--white-key-active);
-  }
-  .white.selected {
-    background: var(--white-key-selected);
   }
   .piano.no-labels .white .label { visibility: hidden; }
   .white .label {
@@ -239,8 +222,6 @@
     font-size: 11px;
     font-weight: 500;
   }
-  .piano.extended .white .label .ko { font-size: 14px; }
-  .piano.extended .white .label .en { font-size: 10px; }
   /* Black keys overlay */
   .black-row {
     position: absolute;
@@ -265,10 +246,6 @@
   }
   .black:active, .black.flash {
     background: var(--black-key-active);
-  }
-  .black.selected {
-    background: var(--black-key-selected);
-    box-shadow: inset 0 -4px 6px rgba(0,0,0,0.5), 0 0 0 2px var(--accent);
   }
 
   /* --- score --- */
@@ -385,88 +362,80 @@
   }
 
   /* --- Find Note mode UI --- */
-  .find-wrap {
-    background: var(--white-key);
-    border-radius: 14px;
-    padding: 18px 16px 14px;
-    box-shadow: var(--shadow);
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    grid-template-areas:
-      "clef name counter"
-      "feedback feedback feedback";
-    align-items: center;
-    column-gap: 14px;
-    row-gap: 8px;
-    min-height: 160px;
-    position: relative;
-    transition: background-color 200ms ease;
-  }
-  .find-wrap.correct { background: #d6f5d6; }
-  .find-wrap.wrong { background: #fbd6d6; }
-  .find-clef {
-    grid-area: clef;
-    width: 70px;
-    min-height: 90px;
+  .find-header {
     display: flex;
-    align-items: center;
-    justify-content: center;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 0 4px;
   }
-  .find-clef svg { display: block; max-width: 100%; height: auto; }
   .find-name {
-    grid-area: name;
-    text-align: center;
-    color: #1a1a2e;
+    color: var(--ink);
     font-weight: 700;
     line-height: 1;
   }
   .find-name .primary {
-    display: block;
-    font-size: 64px;
+    display: inline-block;
+    font-size: 56px;
+    vertical-align: bottom;
   }
   .find-name .secondary {
-    display: block;
-    margin-top: 4px;
-    font-size: 14px;
-    color: #555;
+    display: inline-block;
+    margin-left: 8px;
+    font-size: 18px;
+    color: var(--muted);
     font-weight: 500;
     letter-spacing: 0.04em;
+    vertical-align: bottom;
   }
   .find-counter {
-    grid-area: counter;
-    color: #333;
+    color: var(--ink);
     font-weight: 700;
     font-size: 22px;
     font-variant-numeric: tabular-nums;
     text-align: right;
-    min-width: 64px;
   }
   .find-counter .label {
     display: block;
     font-size: 11px;
     font-weight: 500;
-    color: #777;
+    color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-bottom: 2px;
   }
-  .find-counter .nums {
-    display: inline-block;
+  .find-staff-wrap {
+    background: var(--white-key);
+    border-radius: 14px;
+    padding: 8px 8px;
+    box-shadow: var(--shadow);
+    margin-top: 8px;
   }
+  .find-staff {
+    cursor: crosshair;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .find-staff svg { display: block; max-width: 100%; height: auto; }
+  .find-staff.correct { background: #d6f5d6; border-radius: 10px; }
+  .find-staff.wrong { background: #fbd6d6; border-radius: 10px; }
   .find-feedback {
-    grid-area: feedback;
     text-align: center;
     font-size: 14px;
     font-weight: 600;
-    color: #444;
+    color: var(--muted);
     min-height: 18px;
+    padding: 4px 0 0;
   }
-  .find-feedback.correct { color: #1e7a32; }
-  .find-feedback.wrong { color: #a02020; }
+  .find-feedback.correct { color: #4ade80; }
+  .find-feedback.wrong { color: #f87171; }
 
   /* --- mode-scoped section visibility --- */
   body[data-mode="read"] #find-note { display: none; }
   body[data-mode="find"] #read-note { display: none; }
+  body[data-mode="find"] #piano { display: none; }
   body[data-mode="read"] .mode-find-only { display: none; }
   body[data-mode="find"] .mode-read-only { display: none; }
 
@@ -544,8 +513,8 @@
     .clef-toggle button { padding: 8px 10px; font-size: 14px; }
     .piano { height: 140px; }
     .white .label .en { display: none; }
-    .find-name .primary { font-size: 52px; }
-    .find-clef { width: 56px; min-height: 70px; }
+    .find-name .primary { font-size: 44px; }
+    .find-name .secondary { font-size: 14px; }
   }
 </style>
 </head>
@@ -586,18 +555,21 @@
     </section>
 
     <section id="find-note">
-      <div class="find-wrap" id="find-wrap">
-        <div class="find-clef" id="find-clef"></div>
+      <div class="find-header" id="find-header">
         <div class="find-name" id="find-name">
           <span class="primary" id="find-name-primary">도</span>
           <span class="secondary" id="find-name-secondary">C</span>
         </div>
         <div class="find-counter">
-          <span class="label">Selected</span>
+          <span class="label">Placed</span>
           <span class="nums"><span id="find-selected">0</span> / <span id="find-target">0</span></span>
         </div>
-        <div class="find-feedback" id="find-feedback"></div>
       </div>
+
+      <div class="find-staff-wrap">
+        <div class="find-staff" id="find-staff"></div>
+      </div>
+      <div class="find-feedback" id="find-feedback"></div>
 
       <div class="input-row" style="margin-top: 14px;">
         <button id="find-submit" class="wide">Submit</button>

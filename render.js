@@ -52,6 +52,65 @@ function renderClefOnly(container, clef) {
   stave.setContext(ctx).draw();
 }
 
+// Render a tall staff with the chosen clef and N placed pitches (whole notes,
+// sorted by pitch, spread horizontally). VexFlow auto-draws ledger lines for
+// notes off the staff. Returns {bottomLineY, stepPx, svgWidth, svgHeight} so
+// the caller can map click Y → diatonic position.
+//
+// `pitches` is an array of { step, octave }.
+// `marks` (optional) is an array of {step, octave, kind: 'correct'|'wrong'|'miss'}
+//   that overrides per-note styling during post-submit feedback.
+function renderFindStaff(container, clef, pitches, marks) {
+  container.innerHTML = '';
+
+  const STEP_TO_PC = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+  const pitchKey = (p) => `${p.step}${p.octave}`;
+  const midiOf = (p) => (p.octave + 1) * 12 + STEP_TO_PC[p.step];
+
+  const width = Math.min((container.parentElement && container.parentElement.clientWidth) || 480, 480) - 12;
+  const height = 220; // tall enough for ~3 ledger lines above + 2 below
+  const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
+  renderer.resize(width, height);
+  const ctx = renderer.getContext();
+
+  const staveTopY = 80; // leave room above for ledger lines (up to ~E6 / ~D4 below)
+  const stave = new VF.Stave(8, staveTopY, width - 16);
+  stave.addClef(clef === 'bass' ? 'bass' : 'treble');
+  stave.setContext(ctx).draw();
+
+  if (pitches && pitches.length > 0) {
+    const sorted = [...pitches].sort((a, b) => midiOf(a) - midiOf(b));
+
+    const markMap = new Map();
+    if (marks) for (const m of marks) markMap.set(pitchKey(m), m.kind);
+
+    const notes = sorted.map(p => {
+      const note = new VF.StaveNote({
+        clef: clef === 'bass' ? 'bass' : 'treble',
+        keys: [`${p.step.toLowerCase()}/${p.octave}`],
+        duration: 'w',
+      });
+      const kind = markMap.get(pitchKey(p));
+      if (kind === 'wrong') note.setStyle({ fillStyle: '#a02020', strokeStyle: '#a02020' });
+      else if (kind === 'correct') note.setStyle({ fillStyle: '#1e7a32', strokeStyle: '#1e7a32' });
+      return note;
+    });
+
+    const voice = new VF.Voice({ num_beats: notes.length, beat_value: 1 });
+    voice.addTickables(notes);
+    new VF.Formatter().joinVoices([voice]).format([voice], Math.max(width - 100, 120));
+    voice.draw(ctx, stave);
+  }
+
+  return {
+    bottomLineY: stave.getYForLine(4),
+    stepPx: 5, // VexFlow default: one diatonic step = 5px vertical
+    svgWidth: width,
+    svgHeight: height,
+  };
+}
+
 window.renderNote = renderNote;
 window.renderClefOnly = renderClefOnly;
+window.renderFindStaff = renderFindStaff;
 })();
