@@ -32,6 +32,7 @@ let currentStep = null;     // 'C'..'B'
 let currentClef = null;     // 'treble' | 'bass'
 let targetMidis = null;     // Set<number>
 const selectedMidis = new Set();  // user's placements
+const opHistory = [];       // stack of {type:'add'|'remove'|'move', midi?, from?, to?}
 let staffRef = null;        // {bottomLineY, stepPx, svgWidth, svgHeight}
 let locked = false;
 let awaitingNext = false;   // true after a wrong submit until user clicks Next
@@ -102,6 +103,7 @@ function start() {
   awaitingNext = false;
   findSubmitBtn.textContent = 'Submit';
   selectedMidis.clear();
+  opHistory.length = 0;
   findFeedbackEl.textContent = '';
   findFeedbackEl.className = 'find-feedback';
   findStaffEl.classList.remove('correct', 'wrong');
@@ -156,13 +158,24 @@ function snapClickYToMidi(clickY) {
 // --- drag-to-place interaction ----------------------------------------------
 //
 // pointerdown shows a snap preview marker at the tapped pitch. pointermove
-// slides the preview up/down through diatonic positions. pointerup commits:
-// if the snapped pitch is already in selectedMidis we remove it, otherwise
-// we add it (and play audio). Removes the "tap-once-and-pray" precision
-// problem that made low-ledger-line notes (e.g. bass C2) hard to place.
+// slides the preview through diatonic positions. pointerup commits.
+//
+// Two cases at pointerup:
+//   - Stationary tap (snap never changed): toggle the tapped pitch
+//     (add if empty, remove if already placed). Preserves the original
+//     tap-to-toggle behavior.
+//   - Drag (snap changed at least once): if the touch started on an existing
+//     note, that note is "lifted off" the moment the snap first changes
+//     (removed from selectedMidis), so the preview marker becomes its new
+//     home. Release on empty staff = move. Release back on origin, or onto
+//     another already-placed note = restore (cancel the move).
+//
+// Edge: drag that started on empty + ends on an occupied snap = remove that
+// occupied note (preserves prior behavior of "drag to remove").
 
 let dragPointerId = null;
 let dragMidi = null;
+let pickedUpMidi = null;  // midi of the note that was lifted off mid-drag (null = none)
 
 function ensurePreviewEl() {
   let el = findStaffEl.querySelector('.find-preview');
@@ -191,7 +204,12 @@ function showPreviewAtMidi(midi) {
   el.style.top = (svgRect.top - wrapRect.top + y) + 'px';
   el.style.left = (svgRect.left - wrapRect.left + svgRect.width / 2) + 'px';
   el.dataset.midi = String(midi);
-  el.classList.toggle('remove-hint', selectedMidis.has(midi));
+  // Red hint = "release here removes a note". Only meaningful when we're not
+  // already carrying a picked-up note: when carrying one, dropping on
+  // occupied just cancels (restores origin), and the origin slot is empty
+  // because the note has been lifted off.
+  const removeHint = pickedUpMidi == null && selectedMidis.has(midi);
+  el.classList.toggle('remove-hint', removeHint);
 }
 
 function pointerY(e) {
@@ -211,6 +229,7 @@ function handlePointerDown(e) {
   e.preventDefault();
   dragPointerId = e.pointerId;
   dragMidi = midi;
+  pickedUpMidi = null;
   try { findStaffEl.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
   showPreviewAtMidi(midi);
 }
@@ -226,24 +245,60 @@ function handlePointerMove(e) {
     return;
   }
   if (midi === dragMidi) return;
+
+  // First time the snap changes: if we started on an existing note, lift it
+  // off now (deferred so a pure tap doesn't visually flicker the note away).
+  if (pickedUpMidi == null && dragMidi != null && selectedMidis.has(dragMidi)) {
+    pickedUpMidi = dragMidi;
+    selectedMidis.delete(pickedUpMidi);
+    updateCounter();
+    rerenderStaff(null);
+  }
+
   dragMidi = midi;
   showPreviewAtMidi(midi);
 }
 
 function handlePointerUp(e) {
   if (dragPointerId === null || e.pointerId !== dragPointerId) return;
-  const midi = dragMidi;
+  const endMidi = dragMidi;
+  const startMidi = pickedUpMidi;
   dragPointerId = null;
   dragMidi = null;
+  pickedUpMidi = null;
   clearPreviewEl();
   try { findStaffEl.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
-  if (midi == null) return;
 
-  if (selectedMidis.has(midi)) {
-    selectedMidis.delete(midi);
+  if (endMidi == null) {
+    // Drag ended off-range: restore the picked-up note if any.
+    if (startMidi != null) {
+      selectedMidis.add(startMidi);
+      updateCounter();
+      rerenderStaff(null);
+    }
+    return;
+  }
+
+  if (startMidi != null) {
+    // Drag carrying a picked-up note.
+    if (endMidi === startMidi || selectedMidis.has(endMidi)) {
+      // Released on origin or onto another existing note → restore origin.
+      selectedMidis.add(startMidi);
+    } else {
+      selectedMidis.add(endMidi);
+      opHistory.push({ type: 'move', from: startMidi, to: endMidi });
+      window.PT_Audio.play(endMidi);
+    }
   } else {
-    selectedMidis.add(midi);
-    window.PT_Audio.play(midi);
+    // Stationary tap, or drag that started on empty space.
+    if (selectedMidis.has(endMidi)) {
+      selectedMidis.delete(endMidi);
+      opHistory.push({ type: 'remove', midi: endMidi });
+    } else {
+      selectedMidis.add(endMidi);
+      opHistory.push({ type: 'add', midi: endMidi });
+      window.PT_Audio.play(endMidi);
+    }
   }
   updateCounter();
   rerenderStaff(null);
@@ -253,6 +308,13 @@ function handlePointerCancel(e) {
   if (e.pointerId !== dragPointerId) return;
   dragPointerId = null;
   dragMidi = null;
+  // Restore picked-up note if the gesture was canceled mid-drag.
+  if (pickedUpMidi != null) {
+    selectedMidis.add(pickedUpMidi);
+    pickedUpMidi = null;
+    updateCounter();
+    rerenderStaff(null);
+  }
   clearPreviewEl();
 }
 
@@ -260,6 +322,23 @@ function clearSelection() {
   if (locked) return;
   if (selectedMidis.size === 0) return;
   selectedMidis.clear();
+  opHistory.length = 0;
+  updateCounter();
+  rerenderStaff(null);
+}
+
+function undoLast() {
+  if (locked) return;
+  if (opHistory.length === 0) return;
+  const op = opHistory.pop();
+  if (op.type === 'add') {
+    selectedMidis.delete(op.midi);
+  } else if (op.type === 'remove') {
+    selectedMidis.add(op.midi);
+  } else if (op.type === 'move') {
+    selectedMidis.delete(op.to);
+    selectedMidis.add(op.from);
+  }
   updateCounter();
   rerenderStaff(null);
 }
@@ -339,6 +418,9 @@ findSubmitBtn.addEventListener('click', submit);
 
 const findClearBtn = document.getElementById('find-clear');
 if (findClearBtn) findClearBtn.addEventListener('click', clearSelection);
+
+const findUndoBtn = document.getElementById('find-undo');
+if (findUndoBtn) findUndoBtn.addEventListener('click', undoLast);
 
 // Inverse of snapClickYToMidi — used by tests to drive the staff click handler
 // at a precise pitch. Returns Y relative to the staff SVG.

@@ -63,10 +63,17 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 
 **Placement UX — drag-to-place with snap preview** (not pure tap):
 - `pointerdown` on the staff → a colored preview marker (small oval) appears at the snapped Y.
-- `pointermove` → the marker follows the finger, snapping step-by-step. Marker turns red when hovering an already-placed note (= "release to remove").
-- `pointerup` → commit: toggle the snapped MIDI in `selectedMidis` (add → audio plays; remove → silent).
-- A quick tap (no drag) just commits at the tapped Y. A drag lets you scrub up/down for precision (matters for ledger-line notes like bass C2, which are 5 px apart and hard to hit with a fingertip).
+- `pointermove` → the marker follows the finger, snapping step-by-step. Marker turns red when hovering an already-placed note (= "release to remove") *only when no note is being carried*.
+- `pointerup` → commit. The behavior depends on whether the snap ever changed during the gesture:
+  - **Stationary tap** (snap never moved): toggle the tapped pitch — add if empty, remove if already placed. Preserves the original tap-to-toggle.
+  - **Drag starting on an existing note**: the moment the snap first changes, that note is "lifted off" (removed from `selectedMidis`) so the preview marker effectively *is* the carried note. On release: empty target → move; release back on origin → restore (no-op); release onto another existing note → restore origin (the "can't drop here" case).
+  - **Drag starting on empty space**: release on empty → add; release on an occupied snap → remove that occupied note (preserves the prior "drag to scrub off" behavior).
+- A drag lets you scrub up/down for precision (matters for ledger-line notes like bass C2, which are 5 px apart and hard to hit with a fingertip).
 - `touch-action: none` on `.find-staff` so iOS doesn't intercept the drag as a scroll.
+
+**Undo / Clear buttons** (both ghost-style, left of Submit):
+- **Undo** rewinds the last action in `opHistory` — `add` becomes delete, `remove` becomes re-add, `move` reverts `to`→`from`. Stationary "drag to restore origin" gestures don't push an op (nothing to undo), since they're no-ops. History is cleared on Clear, on new question (`start()`), and is not persisted across questions.
+- **Clear** wipes `selectedMidis` and `opHistory`. No-ops when locked (during feedback review).
 
 **Submit / feedback UX:**
 - **Correct submit** → staff turns green, feedback says `✓ All N Cs found`, **auto-advances** after ~900 ms.
@@ -74,8 +81,6 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 - **No auto-advance on wrong.** The Submit button swaps to **"Next"** so the user can study the corrected staff at their own pace; clicking Next clears state and starts a fresh question.
 - Note heads cluster tightly (~70 px per note via formatter width clamp), so a 3-note answer doesn't sprawl across a 700-px staff.
 
-**Other buttons:**
-- **Clear** button (ghost-style, left of Submit) — wipes `selectedMidis` and re-renders an empty staff. No-ops when locked (during feedback review).
 
 ### Mode picker
 - Full-screen overlay shown on **first launch only** (when `settings.mode` is null). After that, the app boots into the saved mode.
@@ -143,9 +148,10 @@ GitHub Pages config: source = "Deploy from a branch", branch = `main`, folder = 
    - 도 prompt + counter `0 / N`.
    - Press-and-hold on the staff shows a colored preview marker; sliding up/down moves it step-by-step.
    - Releasing on an empty position places a note (with ledger line if off-staff). Releasing on an existing note removes it (the preview turns red while hovering one).
+   - **Drag-to-move**: press a placed note and drag up/down — it lifts off (disappears from the staff during the drag) and lands at the new snap position on release. Releasing back on the origin or onto another placed note restores the original.
    - **Submit (correct)** → green wash, auto-advances after ~900 ms.
    - **Submit (wrong)** → pink wash, placed notes recolored green/red, missed targets shown as ghost-green notes, button swaps to **Next**, no auto-advance.
-   - **Clear** wipes all placements mid-round.
+   - **Undo** rewinds the last add/remove/move. **Clear** wipes all placements mid-round and resets undo history.
 4. Settings: in Read Note the accidental slider is visible and language radio is hidden; in Find Note it's the opposite. Toggle Find Note language between 한글 and English — prompt swaps.
 5. Switch clef while in Find Note — staff redraws with the new clef (treble A3–E6 vs bass C2–E4), current question regenerates.
 6. Refresh — boots straight into the last-used mode, no picker.
