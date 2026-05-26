@@ -17,7 +17,7 @@ Live at **https://bshlee.github.io/piano-trainer/** (GitHub Pages, deploys from 
 | File | Role |
 |---|---|
 | `index.html` | Markup, inline `<style>`, script tags. Loads VexFlow from `cdn.jsdelivr.net`. Hosts the mode-picker overlay and both mode sections (`#read-note`, `#find-note`). |
-| `render.js`  | `window.renderNote(container, pitch)` draws clef + one note. `window.renderClefOnly(container, clef)` draws an empty staff with just the clef. `window.renderFindStaff(container, clef, pitches, marks)` draws a 170-px-tall staff with N notes (whole notes, tight horizontal clustering — ~70 px/note). Marks drive feedback colors: `'correct'` (green), `'wrong'` (red), `'miss'` (ghost-green; added to the voice even if not in `pitches`). Returns `{bottomLineY, stepPx, svgWidth, svgHeight}` so the caller can map click Y → diatonic step. |
+| `render.js`  | `window.renderNote(container, pitch)` draws clef + one note. `window.renderClefOnly(container, clef)` draws an empty staff with just the clef. `window.renderFindStaff(container, clef, pitches, marks)` draws a 170-px-tall staff with N notes (whole notes, tight horizontal clustering — ~70 px/note). Marks drive feedback colors: `'correct'` (green), `'wrong'` (red), `'miss'` (ghost-green; added to the voice even if not in `pitches`). Returns `{bottomLineY, stepPx, svgWidth, svgHeight, noteXs}` — the caller maps click Y → diatonic step, and `noteXs[midi]` lets the drag preview align horizontally with the note being modified. |
 | `app.js`     | Shared infrastructure + Read Note mode: pitch utils, piano UI (`buildPiano(range)`), Web Audio synth, persistence, distribution stats, mode picker, mode dispatch. Exposes `window.PT_Audio`, `PT_Pitch`, `PT_Piano`, `PT_Settings`. |
 | `mode-find.js` | Find Note mode: prompts a natural note, computes target MIDIs in the clef's range, listens for pointer events on the staff SVG (pointerdown → preview marker → pointerup → toggle), submits/judges, manages the Submit↔Next button swap. Exposes `window.PT_FindNote`. |
 | `README.md`  | Human-facing docs (features, usage, dev setup). |
@@ -64,9 +64,10 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 **Placement UX — drag-to-place with snap preview** (not pure tap):
 - `pointerdown` on the staff → a colored preview marker (small oval) appears at the snapped Y.
 - `pointermove` → the marker follows the finger, snapping step-by-step. Marker turns red when hovering an already-placed note (= "release to remove") *only when no note is being carried*.
+- The original placed note stays visible throughout the drag — it's never removed mid-gesture. The preview oval anchors its X to the original note (via `staffRef.noteXs[originMidi]` returned from `renderFindStaff`), so the user sees "this preview is the modification of that note." Only Y changes as the finger moves up/down.
 - `pointerup` → commit. The behavior depends on whether the snap ever changed during the gesture:
   - **Stationary tap** (snap never moved): toggle the tapped pitch — add if empty, remove if already placed. Preserves the original tap-to-toggle.
-  - **Drag starting on an existing note**: the moment the snap first changes, that note is "lifted off" (removed from `selectedMidis`) so the preview marker effectively *is* the carried note. On release: empty target → move; release back on origin → restore (no-op); release onto another existing note → restore origin (the "can't drop here" case).
+  - **Drag starting on an existing note** → empty target: atomic move (remove origin, add end). → origin or another existing note: no-op (move canceled — can't drop on occupied).
   - **Drag starting on empty space**: release on empty → add; release on an occupied snap → remove that occupied note (preserves the prior "drag to scrub off" behavior).
 - A drag lets you scrub up/down for precision (matters for ledger-line notes like bass C2, which are 5 px apart and hard to hit with a fingertip).
 - `touch-action: none` on `.find-staff` so iOS doesn't intercept the drag as a scroll.
@@ -148,7 +149,7 @@ GitHub Pages config: source = "Deploy from a branch", branch = `main`, folder = 
    - 도 prompt + counter `0 / N`.
    - Press-and-hold on the staff shows a colored preview marker; sliding up/down moves it step-by-step.
    - Releasing on an empty position places a note (with ledger line if off-staff). Releasing on an existing note removes it (the preview turns red while hovering one).
-   - **Drag-to-move**: press a placed note and drag up/down — it lifts off (disappears from the staff during the drag) and lands at the new snap position on release. Releasing back on the origin or onto another placed note restores the original.
+   - **Drag-to-move**: press a placed note and drag up/down — the original note stays on the staff; a blue preview oval (aligned horizontally with the original) follows the snap position. Release on empty = move; release on origin or another placed note = no-op (move canceled).
    - **Submit (correct)** → green wash, auto-advances after ~900 ms.
    - **Submit (wrong)** → pink wash, placed notes recolored green/red, missed targets shown as ghost-green notes, button swaps to **Next**, no auto-advance.
    - **Undo** rewinds the last add/remove/move. **Clear** wipes all placements mid-round and resets undo history.

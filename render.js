@@ -101,6 +101,7 @@ function renderFindStaff(container, clef, pitches, marks) {
     }
   }
 
+  const noteXs = {};
   if (items.length > 0) {
     items.sort((a, b) => midiOf(a.pitch) - midiOf(b.pitch));
 
@@ -128,6 +129,14 @@ function renderFindStaff(container, clef, pitches, marks) {
     voice.addTickables(notes);
     new VF.Formatter().joinVoices([voice]).format([voice], formatWidth);
     voice.draw(ctx, stave);
+
+    // Record each placed note's X (SVG internal coords) so the drag preview
+    // can align horizontally with the note it's modifying. +7 ≈ half a whole-
+    // note head-width to land on the head's visual center.
+    for (let i = 0; i < items.length; i++) {
+      const midi = midiOf(items[i].pitch);
+      noteXs[midi] = notes[i].getAbsoluteX() + 7;
+    }
   }
 
   return {
@@ -135,6 +144,7 @@ function renderFindStaff(container, clef, pitches, marks) {
     stepPx: 5, // VexFlow default: one diatonic step = 5px vertical
     svgWidth: width,
     svgHeight: height,
+    noteXs,
   };
 }
 

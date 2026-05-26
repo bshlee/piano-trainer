@@ -160,22 +160,26 @@ function snapClickYToMidi(clickY) {
 // pointerdown shows a snap preview marker at the tapped pitch. pointermove
 // slides the preview through diatonic positions. pointerup commits.
 //
-// Two cases at pointerup:
-//   - Stationary tap (snap never changed): toggle the tapped pitch
-//     (add if empty, remove if already placed). Preserves the original
-//     tap-to-toggle behavior.
-//   - Drag (snap changed at least once): if the touch started on an existing
-//     note, that note is "lifted off" the moment the snap first changes
-//     (removed from selectedMidis), so the preview marker becomes its new
-//     home. Release on empty staff = move. Release back on origin, or onto
-//     another already-placed note = restore (cancel the move).
+// The original placed note stays visible throughout the drag — we never
+// remove it mid-gesture. The preview oval is positioned at the original
+// note's X (so the user sees "this is the note I'm modifying" and where
+// the new pitch would land vertically).
 //
-// Edge: drag that started on empty + ends on an occupied snap = remove that
-// occupied note (preserves prior behavior of "drag to remove").
+// pointerup behavior:
+//   - Stationary tap (snap never changed): toggle the tapped pitch
+//     (add if empty, remove if already placed). Preserves tap-to-toggle.
+//   - Drag from existing note → release on empty: atomic move (remove
+//     origin, add end).
+//   - Drag from existing note → release on origin or another existing
+//     note: no-op (the move is canceled — can't drop on occupied).
+//   - Drag from empty → release on empty: add.
+//   - Drag from empty → release on occupied: remove that note (preserves
+//     prior "drag to scrub off" behavior).
 
 let dragPointerId = null;
 let dragMidi = null;
-let pickedUpMidi = null;  // midi of the note that was lifted off mid-drag (null = none)
+let dragOriginMidi = null;  // midi of the placed note we started on (null if started on empty)
+let dragMoved = false;      // has the snap changed at least once during this gesture
 
 function ensurePreviewEl() {
   let el = findStaffEl.querySelector('.find-preview');
@@ -200,15 +204,24 @@ function showPreviewAtMidi(midi) {
   if (y == null) return;
   const svgRect = svg.getBoundingClientRect();
   const wrapRect = findStaffEl.getBoundingClientRect();
+
+  // X: align with the original note's X if we're modifying one; otherwise
+  // staff center. SVG may be CSS-scaled (max-width: 100%), so map internal
+  // X → displayed X via the width ratio.
+  let xInSvg = staffRef.svgWidth / 2;
+  if (dragOriginMidi != null && staffRef.noteXs && staffRef.noteXs[dragOriginMidi] != null) {
+    xInSvg = staffRef.noteXs[dragOriginMidi];
+  }
+  const scaleX = staffRef.svgWidth > 0 ? svgRect.width / staffRef.svgWidth : 1;
+
   const el = ensurePreviewEl();
   el.style.top = (svgRect.top - wrapRect.top + y) + 'px';
-  el.style.left = (svgRect.left - wrapRect.left + svgRect.width / 2) + 'px';
+  el.style.left = (svgRect.left - wrapRect.left + xInSvg * scaleX) + 'px';
   el.dataset.midi = String(midi);
-  // Red hint = "release here removes a note". Only meaningful when we're not
-  // already carrying a picked-up note: when carrying one, dropping on
-  // occupied just cancels (restores origin), and the origin slot is empty
-  // because the note has been lifted off.
-  const removeHint = pickedUpMidi == null && selectedMidis.has(midi);
+  // Red hint = "release here removes a note". When we're carrying an origin
+  // note, releasing on origin or on another existing note just cancels —
+  // nothing is removed — so red would be misleading.
+  const removeHint = dragOriginMidi == null && selectedMidis.has(midi);
   el.classList.toggle('remove-hint', removeHint);
 }
 
@@ -229,7 +242,8 @@ function handlePointerDown(e) {
   e.preventDefault();
   dragPointerId = e.pointerId;
   dragMidi = midi;
-  pickedUpMidi = null;
+  dragMoved = false;
+  dragOriginMidi = selectedMidis.has(midi) ? midi : null;
   try { findStaffEl.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
   showPreviewAtMidi(midi);
 }
@@ -245,16 +259,7 @@ function handlePointerMove(e) {
     return;
   }
   if (midi === dragMidi) return;
-
-  // First time the snap changes: if we started on an existing note, lift it
-  // off now (deferred so a pure tap doesn't visually flicker the note away).
-  if (pickedUpMidi == null && dragMidi != null && selectedMidis.has(dragMidi)) {
-    pickedUpMidi = dragMidi;
-    selectedMidis.delete(pickedUpMidi);
-    updateCounter();
-    rerenderStaff(null);
-  }
-
+  dragMoved = true;
   dragMidi = midi;
   showPreviewAtMidi(midi);
 }
@@ -262,43 +267,41 @@ function handlePointerMove(e) {
 function handlePointerUp(e) {
   if (dragPointerId === null || e.pointerId !== dragPointerId) return;
   const endMidi = dragMidi;
-  const startMidi = pickedUpMidi;
+  const originMidi = dragOriginMidi;
+  const moved = dragMoved;
   dragPointerId = null;
   dragMidi = null;
-  pickedUpMidi = null;
+  dragOriginMidi = null;
+  dragMoved = false;
   clearPreviewEl();
   try { findStaffEl.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
 
-  if (endMidi == null) {
-    // Drag ended off-range: restore the picked-up note if any.
-    if (startMidi != null) {
-      selectedMidis.add(startMidi);
-      updateCounter();
-      rerenderStaff(null);
+  if (endMidi == null) return;  // off-range release: original was never touched, nothing to do
+
+  if (moved && originMidi != null) {
+    // Drag carrying an existing note.
+    if (endMidi === originMidi || selectedMidis.has(endMidi)) {
+      // Released on origin or onto another existing note → cancel.
+      return;
     }
+    // Atomic move: remove origin, add end.
+    selectedMidis.delete(originMidi);
+    selectedMidis.add(endMidi);
+    opHistory.push({ type: 'move', from: originMidi, to: endMidi });
+    window.PT_Audio.play(endMidi);
+    updateCounter();
+    rerenderStaff(null);
     return;
   }
 
-  if (startMidi != null) {
-    // Drag carrying a picked-up note.
-    if (endMidi === startMidi || selectedMidis.has(endMidi)) {
-      // Released on origin or onto another existing note → restore origin.
-      selectedMidis.add(startMidi);
-    } else {
-      selectedMidis.add(endMidi);
-      opHistory.push({ type: 'move', from: startMidi, to: endMidi });
-      window.PT_Audio.play(endMidi);
-    }
+  // Stationary tap, or drag from empty: toggle endMidi.
+  if (selectedMidis.has(endMidi)) {
+    selectedMidis.delete(endMidi);
+    opHistory.push({ type: 'remove', midi: endMidi });
   } else {
-    // Stationary tap, or drag that started on empty space.
-    if (selectedMidis.has(endMidi)) {
-      selectedMidis.delete(endMidi);
-      opHistory.push({ type: 'remove', midi: endMidi });
-    } else {
-      selectedMidis.add(endMidi);
-      opHistory.push({ type: 'add', midi: endMidi });
-      window.PT_Audio.play(endMidi);
-    }
+    selectedMidis.add(endMidi);
+    opHistory.push({ type: 'add', midi: endMidi });
+    window.PT_Audio.play(endMidi);
   }
   updateCounter();
   rerenderStaff(null);
@@ -308,13 +311,8 @@ function handlePointerCancel(e) {
   if (e.pointerId !== dragPointerId) return;
   dragPointerId = null;
   dragMidi = null;
-  // Restore picked-up note if the gesture was canceled mid-drag.
-  if (pickedUpMidi != null) {
-    selectedMidis.add(pickedUpMidi);
-    pickedUpMidi = null;
-    updateCounter();
-    rerenderStaff(null);
-  }
+  dragOriginMidi = null;
+  dragMoved = false;
   clearPreviewEl();
 }
 
