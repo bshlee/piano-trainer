@@ -290,7 +290,10 @@ function loadSampledPiano() {
 // until (or unless) the samples are available.
 function playMidi(midi) {
   if (sfInstrument) {
-    try { sfInstrument.play(midi, undefined, { gain: 2.2 }); return; }
+    // duration clips the note so it doesn't ring out for the sample's full
+    // (multi-second) sustain; release is a short fade so the cut isn't abrupt.
+    // Together they kill the long "reverb"-like tail.
+    try { sfInstrument.play(midi, undefined, { gain: 2.2, duration: 0.9, release: 0.18 }); return; }
     catch (e) { /* fall through to synth */ }
   }
   loadSampledPiano(); // kick off (or no-op if already loading/loaded)
