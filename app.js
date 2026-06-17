@@ -427,7 +427,8 @@ const distribution = loadDistribution();
 // notesPerStrip > 1 enables retry-on-wrong, advance-on-correct sight-reading.
 let currentStrip = null;     // Array<{step, octave, alter, clef}>
 let currentIndex = 0;
-let locked = false; // briefly true between answer and next question
+let locked = false;     // briefly true only across a question roll / single-note reveal
+let flashTimer = null;  // self-clearing green/pink wash after a lag-free strip answer
 
 function loadSettings() {
   try {
@@ -523,6 +524,7 @@ function renderStats() {
 function newQuestion() {
   if (settings.mode !== 'read') return; // ignore stale auto-advances after mode switch
   locked = false;
+  clearTimeout(flashTimer);
   feedbackEl.textContent = '';
   feedbackEl.className = 'feedback';
   staffWrap.classList.remove('correct','wrong');
@@ -605,62 +607,76 @@ function resolveJudge(ok, playedMidi) {
   const stripMode = N > 1;
   const isLast = currentIndex + 1 >= N;
 
-  locked = true;
   stats.total += 1;
 
   if (ok) {
     stats.correct += 1;
     stats.streak += 1;
     if (stats.streak > stats.best) stats.best = stats.streak;
-    feedbackEl.textContent = '✓ ' + describePitch(cur);
-    feedbackEl.className = 'feedback correct';
-    staffWrap.classList.add('correct');
     saveStats();
     renderStats();
-    if (isLast) {
-      // Strip complete → roll a fresh one.
-      setTimeout(newQuestion, 600);
-    } else {
-      // Advance the highlight within the same strip; keep streak / score.
-      setTimeout(() => {
-        currentIndex += 1;
-        locked = false;
-        staffWrap.classList.remove('correct', 'wrong');
-        feedbackEl.textContent = '';
-        feedbackEl.className = 'feedback';
-        answerInput.value = '';
-        renderCurrentStrip();
-      }, 600);
+    staffWrap.classList.remove('wrong');
+    staffWrap.classList.add('correct');
+    feedbackEl.textContent = '✓ ' + describePitch(cur);
+    feedbackEl.className = 'feedback correct';
+
+    if (stripMode && !isLast) {
+      // Mid-strip: advance the caret *immediately* and don't lock, so a fast
+      // player can answer the next note with zero lag. The green wash clears
+      // itself a moment after the most recent correct note.
+      currentIndex += 1;
+      answerInput.value = '';
+      renderCurrentStrip();
+      scheduleFlashClear();
+      return;
     }
+
+    // Single note, or the last note of a strip: brief pause so the green reads,
+    // then roll a fresh question. Lock to swallow stray presses during the roll
+    // so they can't double-count against an already-answered note.
+    locked = true;
+    clearTimeout(flashTimer);
+    setTimeout(newQuestion, stripMode ? 450 : 600);
     return;
   }
 
   // Wrong answer.
   stats.streak = 0;
+  saveStats();
+  renderStats();
+  staffWrap.classList.remove('correct');
   staffWrap.classList.add('wrong');
+
   if (stripMode) {
-    // Don't reveal — strip mode is retry-until-correct so the user has to
-    // actually identify the note. Naming the key they hit isn't a reveal.
+    // Retry-until-correct, lag-free: don't lock, so the user can immediately
+    // play the right note. Don't reveal the target (naming the key they hit
+    // isn't a reveal). The caret stays on the same note.
     feedbackEl.textContent = played ? `✗ ${played} — try again` : '✗ try again';
     feedbackEl.className = 'feedback wrong';
-    saveStats();
-    renderStats();
-    setTimeout(() => {
-      locked = false;
-      staffWrap.classList.remove('wrong');
-      feedbackEl.textContent = '';
-      feedbackEl.className = 'feedback';
-      answerInput.value = '';
-    }, 1200);
-  } else {
-    // Single-note flashcard: reveal the answer and advance, matching the
-    // original Read Note flow.
-    feedbackEl.textContent = played ? `✗ ${played} — was ${describePitch(cur)}` : '✗ was ' + describePitch(cur);
-    feedbackEl.className = 'feedback wrong';
-    saveStats();
-    renderStats();
-    setTimeout(newQuestion, 1200);
+    answerInput.value = '';
+    scheduleFlashClear();
+    return;
   }
+
+  // Single-note flashcard: reveal the answer and advance after a read pause.
+  locked = true;
+  clearTimeout(flashTimer);
+  feedbackEl.textContent = played ? `✗ ${played} — was ${describePitch(cur)}` : '✗ was ' + describePitch(cur);
+  feedbackEl.className = 'feedback wrong';
+  setTimeout(newQuestion, 1200);
+}
+
+// Clear the green/pink wash + feedback a moment after a lag-free strip answer,
+// without blocking input. clearTimeout-dedup means only the most recent answer's
+// timer fires, so during fast play the wash stays lit and clears once at the end.
+function scheduleFlashClear() {
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => {
+    if (locked) return; // a roll / single-note reveal owns the UI; leave it
+    staffWrap.classList.remove('correct', 'wrong');
+    feedbackEl.textContent = '';
+    feedbackEl.className = 'feedback';
+  }, 320);
 }
 
 function renderDistribution() {
