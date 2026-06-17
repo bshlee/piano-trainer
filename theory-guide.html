@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Chords, Progressions & 7ths — a guide</title>
+<style>
+  :root {
+    --bg: #faf8f4;
+    --card: #ffffff;
+    --ink: #1d1b18;
+    --muted: #6b655c;
+    --line: #e7e2d8;
+    --accent: #2f6f4f;
+    --accent-soft: #e6f1ea;
+    --root: #c0392b;     /* root */
+    --third: #2f6f4f;    /* third */
+    --fifth: #2c6fbf;    /* fifth */
+    --seventh: #8e44ad;  /* seventh */
+    --shadow: 0 1px 2px rgba(0,0,0,.05), 0 6px 24px rgba(0,0,0,.05);
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 0 16px 80px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header.hero {
+    padding: 40px 0 20px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 28px;
+  }
+  .kicker {
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    margin: 0 0 8px;
+  }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 10px; letter-spacing: -.02em; }
+  .lede { color: var(--muted); font-size: 17px; margin: 0; max-width: 60ch; }
+  h2 {
+    font-size: 23px; margin: 44px 0 12px; letter-spacing: -.01em;
+    scroll-margin-top: 16px;
+  }
+  h3 { font-size: 17px; margin: 26px 0 8px; }
+  p { margin: 0 0 14px; }
+  .muted { color: var(--muted); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin: 16px 0;
+    box-shadow: var(--shadow);
+  }
+  .callout {
+    background: var(--accent-soft);
+    border: 1px solid #cfe5d8;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 16px 0;
+    font-size: 15px;
+  }
+  .callout b { color: var(--accent); }
+  code, .mono {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    font-size: .92em;
+    background: #f1ede4;
+    padding: 1px 6px;
+    border-radius: 5px;
+  }
+  /* TOC */
+  nav.toc { margin: 0 0 8px; }
+  nav.toc a {
+    display: inline-block;
+    margin: 0 8px 8px 0;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  nav.toc a:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* keyboard diagram */
+  .keyboard {
+    position: relative;
+    display: flex;
+    height: 130px;
+    margin: 14px 0 6px;
+    user-select: none;
+    max-width: 100%;
+  }
+  .wk {
+    position: relative;
+    flex: 1;
+    border: 1px solid #cbc6bb;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    background: #fff;
+    min-width: 0;
+  }
+  .wk .lbl {
+    position: absolute;
+    bottom: 7px; left: 0; right: 0;
+    text-align: center;
+    font-size: 11px;
+    color: #9a948a;
+    font-family: "SF Mono", ui-monospace, monospace;
+  }
+  .bk {
+    position: absolute;
+    top: 0;
+    width: 62%;
+    height: 60%;
+    background: #2a2722;
+    border-radius: 0 0 5px 5px;
+    z-index: 2;
+    transform: translateX(-50%);
+  }
+  /* highlighted keys */
+  .wk.on, .bk.on { box-shadow: inset 0 0 0 3px transparent; }
+  .wk.root, .bk.root { background: var(--root); }
+  .wk.third, .bk.third { background: var(--third); }
+  .wk.fifth, .bk.fifth { background: var(--fifth); }
+  .wk.seventh, .bk.seventh { background: var(--seventh); }
+  .wk.root .lbl, .wk.third .lbl, .wk.fifth .lbl, .wk.seventh .lbl { color: #fff; font-weight: 700; }
+  .bk.root::after, .bk.third::after, .bk.fifth::after, .bk.seventh::after {
+    content: attr(data-l);
+    position: absolute; bottom: 5px; left: 0; right: 0;
+    text-align: center; font-size: 10px; color: #fff; font-weight: 700;
+    font-family: "SF Mono", ui-monospace, monospace;
+  }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; margin: 4px 0 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .dot.root { background: var(--root); }
+  .dot.third { background: var(--third); }
+  .dot.fifth { background: var(--fifth); }
+  .dot.seventh { background: var(--seventh); }
+
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  td.mono, th.mono { font-family: "SF Mono", ui-monospace, monospace; }
+  tr:last-child td { border-bottom: none; }
+  .pill {
+    display: inline-block; padding: 1px 8px; border-radius: 999px;
+    font-size: 12px; font-weight: 700;
+  }
+  .pill.maj { background: #e6f1ea; color: #2f6f4f; }
+  .pill.min { background: #eceaf6; color: #6d4aa0; }
+  .pill.dim { background: #fbe9e7; color: #c0392b; }
+
+  .roman { font-variant: small-caps; font-weight: 700; }
+  .formula { font-size: 15px; }
+  .formula .root { color: var(--root); font-weight: 700; }
+  .formula .third { color: var(--third); font-weight: 700; }
+  .formula .fifth { color: var(--fifth); font-weight: 700; }
+  .formula .seventh { color: var(--seventh); font-weight: 700; }
+
+  hr { border: none; border-top: 1px solid var(--line); margin: 36px 0; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 14px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <p class="kicker">Sheet Music Trainer · Harmony mode</p>
+  <h1>Triads, progressions &amp; 7th chords</h1>
+  <p class="lede">A plain-language guide to exactly what the Harmony drill is showing you — built from the ground up, no prior theory assumed.</p>
+</header>
+
+<nav class="toc">
+  <a href="#building-blocks">Building blocks</a>
+  <a href="#triads">Triads</a>
+  <a href="#qualities">The 4 qualities</a>
+  <a href="#diatonic">Chords in a key</a>
+  <a href="#progressions">Progressions</a>
+  <a href="#sevenths">7th chords</a>
+  <a href="#practice">How to practice</a>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="building-blocks">First, the building blocks</h2>
+
+<p>Western music uses 12 notes that repeat over and over up the keyboard. Seven of them have letter names — <code>C D E F G A B</code> — and then it starts again at C. The black keys are the five in-between notes (sharps ♯ / flats ♭).</p>
+
+<p>Two words you need:</p>
+<ul>
+  <li><b>Interval</b> — the distance between two notes, counted in <i>half-steps</i> (one piano key to the very next key, black or white). C → C♯ is 1 half-step; C → D is 2.</li>
+  <li><b>Scale</b> — a chosen ladder of notes inside a key. The <b>C major scale</b> is just the white keys: <code>C D E F G A B</code>. Every chord in this guide is built by stacking notes from a scale.</li>
+</ul>
+
+<div class="callout">
+  <b>Why "major"?</b> A major scale always follows the same step pattern (whole-whole-half-whole-whole-whole-half). That fixed pattern is what gives every major key the same bright, "do-re-mi" character — only the starting note changes. In the app, picking a key (C, G, D…) just shifts that same pattern to a new starting note.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="triads">Triads — the 3-note chord</h2>
+
+<p>A <b>triad</b> is the most basic chord: <b>three notes stacked in thirds</b>. "Stacked in thirds" means you start on a note, skip one scale note, take the next, skip one, take the next:</p>
+
+<p class="formula" style="text-align:center; font-size:18px; margin:18px 0;">
+  <span class="root">root</span> &nbsp;→ skip →&nbsp; <span class="third">third</span> &nbsp;→ skip →&nbsp; <span class="fifth">fifth</span>
+</p>
+
+<p>The three notes are named by how far they sit above the bottom note:</p>
+<ul>
+  <li><b><span style="color:var(--root)">Root</span></b> — the note the chord is named after. A "C chord" has C as its root.</li>
+  <li><b><span style="color:var(--third)">Third</span></b> — two scale-steps up. This note decides whether the chord sounds <i>happy (major)</i> or <i>sad (minor)</i>.</li>
+  <li><b><span style="color:var(--fifth)">Fifth</span></b> — two more scale-steps up. Adds fullness and stability.</li>
+</ul>
+
+<p>Here is a <b>C major triad</b> — <span class="formula"><span class="root">C</span> · <span class="third">E</span> · <span class="fifth">G</span></span> — on the keyboard:</p>
+
+<div class="card">
+  <div class="keyboard" aria-label="C major triad: C E G">
+    <div class="wk root"><span class="bk"></span><span class="lbl">C</span></div>
+    <div class="wk"><span class="bk"></span><span class="lbl">D</span></div>
+    <div class="wk third"><span class="lbl">E</span></div>
+    <div class="wk"><span class="bk"></span><span class="lbl">F</span></div>
+    <div class="wk fifth"><span class="bk"></span><span class="lbl">G</span></div>
+    <div class="wk"><span class="bk"></span><span class="lbl">A</span></div>
+    <div class="wk"><span class="lbl">B</span></div>
+    <div class="wk"><span class="lbl">C</span></div>
+  </div>
+  <div class="legend">
+    <span><i class="dot root"></i> root (C)</span>
+    <span><i class="dot third"></i> third (E)</span>
+    <span><i class="dot fifth"></i> fifth (G)</span>
+  </div>
+</div>
+
+<div class="callout">
+  <b>In the Harmony drill:</b> your <b>left hand plays the root</b> (low, in the bass clef) and your <b>right hand plays the whole triad</b> (root + third + fifth, in the treble clef). That's why a triad round wants 4 keys total — the root shows up in both hands at different octaves.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="qualities">The four chord qualities</h2>
+
+<p>Keep the root and fifth roughly the same but slide the inner notes a half-step, and the chord changes <b>quality</b> — its emotional color. Four exist; the drill uses the first three (they're the ones that occur naturally in a major key).</p>
+
+<table>
+  <thead>
+    <tr><th>Quality</th><th>Sounds</th><th>Recipe (half-steps from root)</th><th class="mono">Example</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="pill maj">major</span></td>
+      <td>bright, resolved</td>
+      <td>root, <b>+4</b> (third), <b>+7</b> (fifth)</td>
+      <td class="mono">C&nbsp;E&nbsp;G</td>
+    </tr>
+    <tr>
+      <td><span class="pill min">minor</span></td>
+      <td>dark, soft</td>
+      <td>root, <b>+3</b> (third), <b>+7</b> (fifth)</td>
+      <td class="mono">C&nbsp;E♭&nbsp;G</td>
+    </tr>
+    <tr>
+      <td><span class="pill dim">diminished</span></td>
+      <td>tense, unstable</td>
+      <td>root, <b>+3</b>, <b>+6</b> (lowered fifth)</td>
+      <td class="mono">C&nbsp;E♭&nbsp;G♭</td>
+    </tr>
+    <tr>
+      <td><span class="pill" style="background:#fff3da;color:#a06a00">augmented</span></td>
+      <td>dreamy, suspended <span class="muted">(not in the drill)</span></td>
+      <td>root, <b>+4</b>, <b>+8</b> (raised fifth)</td>
+      <td class="mono">C&nbsp;E&nbsp;G♯</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The only difference between major and minor is the <b>third</b> moving by a single half-step. That one note is the single biggest "happy vs. sad" switch in all of Western music — worth training your ear and eye to spot.</p>
+
+<!-- ============================================================ -->
+<h2 id="diatonic">The chords that live in a key</h2>
+
+<p>Here's the elegant part. If you build a triad starting on <i>each note</i> of a major scale — using only notes from that scale — you get <b>seven chords</b>, and their qualities always fall in the same pattern. Music labels them with <b>Roman numerals</b>: uppercase = major, lowercase = minor, ° = diminished.</p>
+
+<table>
+  <thead>
+    <tr><th class="mono">Numeral</th><th>Quality</th><th class="mono">In C major</th><th>Nickname / role</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="mono roman">I</td><td><span class="pill maj">major</span></td><td class="mono">C E G</td><td>Tonic — "home"</td></tr>
+    <tr><td class="mono roman">ii</td><td><span class="pill min">minor</span></td><td class="mono">D F A</td><td>Supertonic — leads to V</td></tr>
+    <tr><td class="mono roman">iii</td><td><span class="pill min">minor</span></td><td class="mono">E G B</td><td>Mediant</td></tr>
+    <tr><td class="mono roman">IV</td><td><span class="pill maj">major</span></td><td class="mono">F A C</td><td>Subdominant — "leaving home"</td></tr>
+    <tr><td class="mono roman">V</td><td><span class="pill maj">major</span></td><td class="mono">G B D</td><td>Dominant — wants to resolve home</td></tr>
+    <tr><td class="mono roman">vi</td><td><span class="pill min">minor</span></td><td class="mono">A C E</td><td>Submediant — the "relative minor"</td></tr>
+    <tr><td class="mono roman">vii°</td><td><span class="pill dim">dim</span></td><td class="mono">B D F</td><td>Leading-tone — very tense</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <b>Why this matters more than memorizing 100 chords:</b> Roman numerals are <i>relative</i> to the key. <span class="roman">V</span> is "the bright chord a fifth above home" in <i>every</i> key — it's G in C major, D in G major, A in D major. Learn the seven roles once and you can play them in all 12 keys. That's exactly why the drill shows you the numeral next to the chord name.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="progressions">Progressions — chords in motion</h2>
+
+<p>A <b>progression</b> is a short, ordered sequence of these chords. Music almost never sits on one chord; it moves through a few that create a sense of <i>leaving home and coming back</i>. The four in the drill are the most common patterns in all of pop, classical, and jazz — learn them and you can play thousands of songs.</p>
+
+<h3>I – IV – V – I &nbsp;<span class="muted">the foundation</span></h3>
+<p>Home → away → tension → home. The most fundamental cadence in Western music. In C: <span class="mono">C → F → G → C</span>. The <span class="roman">V</span> (G) pulls hard back to <span class="roman">I</span> (C) — that pull is the engine of most music.</p>
+
+<h3>ii – V – I &nbsp;<span class="muted">the jazz turnaround</span></h3>
+<p>The single most important progression in jazz, and everywhere in classical too. <span class="roman">ii</span> sets up <span class="roman">V</span>, which resolves to <span class="roman">I</span>. In C: <span class="mono">Dm → G → C</span>. Smooth, inevitable-sounding.</p>
+
+<h3>I – V – vi – IV &nbsp;<span class="muted">the "4-chord song"</span></h3>
+<p>The pop progression — hundreds of hits use exactly this. In C: <span class="mono">C → G → Am → F</span>. The <span class="roman">vi</span> (a minor chord) adds a touch of bittersweetness without leaving the key.</p>
+
+<h3>I – vi – IV – V &nbsp;<span class="muted">the '50s doo-wop</span></h3>
+<p>Think <i>Stand By Me</i>. In C: <span class="mono">C → Am → F → G</span>. Ends on <span class="roman">V</span>, so it loops back to <span class="roman">I</span> naturally and can repeat forever.</p>
+
+<p class="muted" style="margin-top:18px;">In the app, "Mixed" picks one of these at random each round, and finishing a progression (in Circle mode) advances you to the next key around the circle of fifths — so over time you see every chord role in every key.</p>
+
+<!-- ============================================================ -->
+<h2 id="sevenths">7th chords — adding the fourth note</h2>
+
+<p>A <b>seventh chord</b> is just a triad with <b>one more note stacked on top</b> — keep going up in thirds past the fifth and add the <b><span style="color:var(--seventh)">seventh</span></b>:</p>
+
+<p class="formula" style="text-align:center; font-size:18px; margin:18px 0;">
+  <span class="root">root</span> + <span class="third">third</span> + <span class="fifth">fifth</span> + <span class="seventh">seventh</span>
+</p>
+
+<p>Here is a <b>G dominant 7th</b> (<span class="roman">V7</span> in C major) — <span class="formula"><span class="root">G</span> · <span class="third">B</span> · <span class="fifth">D</span> · <span class="seventh">F</span></span>:</p>
+
+<div class="card">
+  <div class="keyboard" aria-label="G dominant seventh: G B D F">
+    <div class="wk"><span class="bk"></span><span class="lbl">C</span></div>
+    <div class="wk"><span class="bk"></span><span class="lbl">D</span></div>
+    <div class="wk"><span class="lbl">E</span></div>
+    <div class="wk seventh"><span class="bk"></span><span class="lbl">F</span></div>
+    <div class="wk root"><span class="bk"></span><span class="lbl">G</span></div>
+    <div class="wk"><span class="bk"></span><span class="lbl">A</span></div>
+    <div class="wk third"><span class="lbl">B</span></div>
+    <div class="wk"><span class="bk"></span><span class="lbl">C</span></div>
+    <div class="wk fifth"><span class="bk"></span><span class="lbl">D</span></div>
+    <div class="wk"><span class="bk"></span><span class="lbl">E</span></div>
+    <div class="wk seventh"><span class="lbl">F</span></div>
+  </div>
+  <div class="legend">
+    <span><i class="dot root"></i> root (G)</span>
+    <span><i class="dot third"></i> third (B)</span>
+    <span><i class="dot fifth"></i> fifth (D)</span>
+    <span><i class="dot seventh"></i> seventh (F)</span>
+  </div>
+</div>
+
+<p>That extra note adds <b>color and tension</b>. The seventh is a "leaning" note — it sounds like it wants to resolve, which makes seventh chords feel richer and more grown-up than plain triads. Jazz is built almost entirely on them.</p>
+
+<p>Just like triads, each scale degree gets its own seventh-chord quality. These are the four-note chords the drill shows in <b>Seventh</b> / <b>Mixed</b> mode:</p>
+
+<table>
+  <thead>
+    <tr><th class="mono">Numeral</th><th>Quality</th><th class="mono">In C major</th><th>Character</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="mono">Imaj7</td><td>major 7</td><td class="mono">C E G B</td><td>lush, floaty, "home but dreamy"</td></tr>
+    <tr><td class="mono">ii7</td><td>minor 7</td><td class="mono">D F A C</td><td>smooth, mellow</td></tr>
+    <tr><td class="mono">iii7</td><td>minor 7</td><td class="mono">E G B D</td><td>gentle</td></tr>
+    <tr><td class="mono">IVmaj7</td><td>major 7</td><td class="mono">F A C E</td><td>warm, open</td></tr>
+    <tr><td class="mono">V7</td><td><b>dominant 7</b></td><td class="mono">G B D F</td><td><b>the most "pulling" chord</b> — drives home to I</td></tr>
+    <tr><td class="mono">vi7</td><td>minor 7</td><td class="mono">A C E G</td><td>soft, reflective</td></tr>
+    <tr><td class="mono">viiø7</td><td>half-dim 7</td><td class="mono">B D F A</td><td>tense, unresolved</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <b>The star is V7 (the "dominant seventh").</b> Out of all seven, it's special: that extra seventh (F in G7) clashes just enough that your ear <i>demands</i> it resolve to the I chord. Almost every piece of tonal music uses <span class="roman">V7 → I</span> to land back home. If you learn one seventh chord first, learn this one.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="practice">Putting it together while you practice</h2>
+
+<p>When a chord appears in the Harmony drill, read it in this order — it's the same way a fluent musician decodes the page:</p>
+<ol>
+  <li><b>Find the root</b> (the bottom note / what your left hand plays).</li>
+  <li><b>Check the third</b> — major (bright) or minor (dark)?</li>
+  <li><b>Stack the fifth</b> on top for the full triad.</li>
+  <li><b>Is there a fourth note?</b> If so it's a seventh chord — add the seventh.</li>
+  <li><b>Name the role:</b> glance at the Roman numeral to feel <i>where in the key</i> you are.</li>
+</ol>
+
+<p>Start in <b>Triads</b>, in <b>one key</b> (C is easiest — all white keys). Once the seven chords feel automatic, switch to <b>Mixed</b> to fold in sevenths, then add more keys. The goal isn't memorizing chords — it's getting so fluent at the <i>recipe</i> that you can build any chord in any key on sight.</p>
+
+<hr>
+<footer>
+  Part of the Sheet Music Trainer. Open the app and pick <b>Harmony</b> to drill everything on this page on your MIDI keyboard.
+</footer>
+
+</div>
+</body>
+</html>

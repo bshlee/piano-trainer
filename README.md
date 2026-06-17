@@ -1,6 +1,6 @@
 # Sheet Music Trainer
 
-A tiny single-page web app for drilling sheet-music reading on the **treble (G-clef)** and **bass (F-clef)** staves. Two modes: read notes off the staff, or find them on it.
+A tiny single-page web app for drilling sheet-music reading on the **treble (G-clef)** and **bass (F-clef)** staves. Four modes: read notes off the staff, find them on it, read & play chords (harmony), and play through Czerny Op. 139 with note-by-note checking.
 
 🎹 **Live: https://bshlee.github.io/piano-trainer/**
 
@@ -14,10 +14,11 @@ First launch shows a mode picker; pick once and it sticks. The topbar **Mode chi
 - Treble / Bass / Both clef modes.
 - Accidentals (♯ / ♭) at configurable probability (default 30%).
 - **Multi-note strip** — Settings has a "Notes per round" slider (1–4). At 1 it's the classic flashcard. At 2–4 the staff shows that many notes side-by-side with a blue caret under the active one; answer correctly to advance the caret, wrong answers stay on the same note (with `✗ try again` — the correct pitch is *not* revealed, so you actually have to identify it).
-- Two answer methods:
+- Three answer methods:
   - **Type** the note: Western (`C`, `D`, …, `B`) or Korean solfège (`도`, `레`, …, `시`), optionally with `#` / `b`. Press Enter to submit.
   - **Tap/click** an on-screen piano (one octave, anchored at middle C).
-- **Pitch-class only** — octave doesn't matter. **Enharmonic equivalents accepted** (`C#` ≡ `Db`).
+  - **Play it on a USB MIDI keyboard** (e.g. Roland FP-10) — enable "MIDI input" in Settings. The note you play is the answer; pairs with the multi-note strip for true sight-reading. **Octave-exact**: C5 on the staff means you must play the C5 key, not just any C. Desktop **Chrome/Edge only** (Web MIDI isn't in Safari/iOS); the toggle is disabled with a hint there. The app makes no sound on this path — your MIDI sound source (e.g. PianoTeq) does.
+- **Typing / clicking are pitch-class only** — octave doesn't matter; **enharmonic equivalents accepted** (`C#` ≡ `Db`). MIDI input is octave-exact (see above).
 - **Score, streak, best, and note distribution** persisted in `localStorage`.
 - **Note distribution panel** with a histogram per clef and an expected-uniform marker, so you can see if the RNG is biasing toward any notes over a long session.
 
@@ -32,8 +33,18 @@ First launch shows a mode picker; pick once and it sticks. The topbar **Mode chi
 - **Undo** rewinds the last add / remove / move. **Clear** wipes all placements mid-round.
 - Treble range: A3–E6. Bass range: C2–E4. Naturals only (accidentals deliberately excluded).
 
-### Shared across both modes
-- **Piano sounds** via Web Audio additive synthesis (no audio assets). Plays on every key press / note placement.
+### Harmony — read & play chords on a grand staff *(MIDI keyboard, desktop Chrome/Edge)*
+- A chord appears on a **grand staff** (both hands) with its **name + Roman numeral + key**. Play it on your MIDI keyboard: **left hand = root (bass), right hand = triad (treble)**.
+- Walks common **progressions** (`I–IV–V–I`, `ii–V–I`, `I–V–vi–IV`, `I–vi–IV–V`, or Mixed) and cycles keys around the **circle of fifths**, so you learn how chords function in a key — pick the progression and key behaviour (circle / random) in Settings.
+- **Octave-exact** chord matching: play exactly the notes shown → green ✓ and the progression advances; a wrong/extra note flashes red and names the key you hit. "Show notes" reveals the note names. No app sound (your MIDI source plays).
+
+### Czerny Op. 139 — play the 100 Progressive Studies, checked note-by-note *(MIDI keyboard, desktop)*
+- Renders each study from MusicXML (via [OpenSheetMusicDisplay](https://opensheetmusicdisplay.org/)) and walks a **cursor** through it. You must play each note/chord to advance — **tempo is ignored, note accuracy only**. A wrong note is flagged and blocks until you play the right one.
+- **Hands** setting: practise Both, Right, or Left. "Studies ▾" opens the picker; finished studies are marked; "Restart" replays from the top. Progress persists.
+- Needs a **desktop browser with Web MIDI** and to be **served over http** (the deployed site, or `python3 -m http.server`) — it loads score files from `data/czerny/`. See [`data/czerny/README.md`](./data/czerny/README.md) for the data pipeline. *(The current build ships one sample study; the full delimited 100-study split is pending real per-study data.)*
+
+### Shared across modes
+- **Piano sounds** via Web Audio additive synthesis (Read/Find) — modelled on a struck acoustic string (detuned unison strings, percussive-then-sustain decay, a tone that darkens as it rings out) rather than a pure-sine tone. MIDI modes (Harmony/Czerny) make no sound — your external MIDI instrument/VST does.
 - **iOS audio unlock** on first tap anywhere — no second-tap dead zone.
 - All state persists in `localStorage`; nothing leaves the device.
 
@@ -54,10 +65,13 @@ python3 -m http.server 8000
 
 ## Code structure
 
-- `index.html`  — markup + inline `<style>` + script tags (loaded in order: VexFlow → render.js → mode-find.js → app.js)
-- `render.js`   — VexFlow helpers: `renderNote` (one note for Read Note), `renderClefOnly`, `renderFindStaff` (multi-note staff with feedback colors for Find Note)
-- `app.js`      — shared infrastructure + Read Note: pitch utils, piano UI, Web Audio synth, persistence, mode picker, mode dispatch. Exposes `window.PT_Audio` / `PT_Pitch` / `PT_Piano` / `PT_Settings` for other modes.
-- `mode-find.js` — Find Note mode logic: drag-to-place on the staff, snap math, submit/judge, Submit↔Next button swap
+- `index.html`  — markup + inline `<style>` + script tags (loaded in order: VexFlow → render.js → mode-find.js → mode-harmony.js → mode-czerny.js → app.js)
+- `render.js`   — VexFlow helpers: `renderNote`, `renderClefOnly`, `renderStrip`, `renderFindStaff`, `renderHarmony` (grand staff + chords for Harmony)
+- `app.js`      — shared infrastructure + Read Note: pitch utils, piano UI, Web Audio synth, persistence, MIDI input (routed by mode), mode picker, mode dispatch. Exposes `window.PT_Audio` / `PT_Pitch` / `PT_Piano` / `PT_Settings` for other modes.
+- `mode-find.js`   — Find Note mode: drag-to-place on the staff, snap math, submit/judge
+- `mode-harmony.js` — Harmony mode: chord/progression theory, grand-staff judging
+- `mode-czerny.js`  — Czerny mode: OSMD play-along, cursor follow engine
+- `data/czerny/`    — per-study MusicXML + `index.json` (see its README); `tools/split-czerny.mjs` generates them offline
 - `CLAUDE.md`   — conventions and design choices (read this if you're modifying the app)
 - `SETUP.md`    — getting set up on a new machine
 
@@ -103,7 +117,7 @@ Not a planned feature; mention if you decide you want it.
 
 Designed but not yet built (see [CLAUDE.md → Future roadmap](./CLAUDE.md#future-roadmap)):
 
-- **Mic input** for Read Note — play the answer on a real piano instead of typing/clicking, pairs with the multi-note strip for true sight-reading practice
+- **Mic input** for Read Note — play the answer acoustically (pitch detection) for pianos with no USB-MIDI out. (USB-MIDI input has shipped — see Read Note above.)
 
 Other ideas (don't have to be in this order):
 

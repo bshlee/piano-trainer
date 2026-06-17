@@ -299,6 +299,11 @@
     gap: 10px;
   }
   details.settings input[type=range] { flex: 1; }
+  details.settings select {
+    flex: 1; padding: 6px 8px; border-radius: 8px; min-height: 36px;
+    background: var(--bg); color: var(--ink); border: 1px solid var(--accent);
+    font-size: 14px;
+  }
 
   /* --- distribution panel --- */
   .dist-summary {
@@ -456,14 +461,88 @@
   .find-feedback.correct { color: #4ade80; }
   .find-feedback.wrong { color: #f87171; }
 
+  /* --- Harmony mode --- */
+  .harmony-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .harmony-chord { display: flex; align-items: baseline; gap: 10px; }
+  .harmony-name { font-size: 26px; font-weight: 800; color: var(--ink); }
+  .harmony-roman { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .harmony-meta { display: flex; align-items: baseline; gap: 16px; color: var(--muted); font-size: 14px; }
+  .harmony-meta .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .harmony-meta b { color: var(--ink); }
+  .grand-staff-wrap {
+    background: var(--white-key); border-radius: 14px; padding: 14px 10px;
+    box-shadow: var(--shadow); min-height: 260px; display: flex;
+    justify-content: center; align-items: center; transition: background-color 200ms ease;
+  }
+  .grand-staff-wrap.correct { background: #d6f5d6; }
+  .grand-staff-wrap.wrong { background: #fbd6d6; }
+  .grand-staff svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  .harmony-feedback {
+    text-align: center; font-size: 14px; font-weight: 600;
+    color: var(--muted); min-height: 18px; padding: 8px 0 0;
+  }
+  .harmony-feedback.correct { color: var(--correct); }
+  .harmony-feedback.wrong { color: var(--wrong); }
+
+  /* --- Czerny mode --- */
+  .czerny-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-bottom: 8px; flex-wrap: wrap;
+  }
+  .czerny-title { display: flex; align-items: baseline; gap: 10px; }
+  .czerny-num { font-size: 24px; font-weight: 800; color: var(--accent); }
+  .czerny-num::before { content: "No. "; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .czerny-name { font-size: 15px; color: var(--ink); }
+  .czerny-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .czerny-progress { font-size: 13px; color: var(--muted); }
+  .czerny-feedback {
+    text-align: center; font-size: 14px; font-weight: 600;
+    color: var(--muted); min-height: 18px; padding: 4px 0 8px;
+  }
+  .czerny-feedback.correct { color: var(--correct); }
+  .czerny-feedback.wrong { color: var(--wrong); }
+  .czerny-feedback.done { color: var(--accent); }
+  .czerny-score-wrap {
+    background: #fff; border-radius: 14px; padding: 10px;
+    box-shadow: var(--shadow); min-height: 200px; overflow-x: auto;
+  }
+  #czerny-score svg { display: block; max-width: 100%; height: auto; }
+  .czerny-picker { margin-top: 10px; }
+  .czerny-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px;
+  }
+  .czerny-grid button {
+    padding: 8px 0; border-radius: 8px; border: 1px solid var(--panel);
+    background: var(--panel); color: var(--ink); font-size: 14px; cursor: pointer; min-height: 44px;
+  }
+  .czerny-grid button.done { border-color: var(--correct); color: var(--correct); }
+  .czerny-grid button.current { background: var(--accent); border-color: var(--accent); color: #fff; }
+
   /* --- mode-scoped section visibility --- */
-  body[data-mode="read"] #find-note { display: none; }
-  body[data-mode="find"] #read-note { display: none; }
-  body[data-mode="find"] #piano { display: none; }
-  body[data-mode="find"] .score { display: none; }
-  body[data-mode="find"] #distribution-panel { display: none; }
-  body[data-mode="read"] .mode-find-only { display: none; }
-  body[data-mode="find"] .mode-read-only { display: none; }
+  #read-note, #find-note, #harmony, #czerny { display: none; }
+  body[data-mode="read"] #read-note { display: block; }
+  body[data-mode="find"] #find-note { display: block; }
+  body[data-mode="harmony"] #harmony { display: block; }
+  body[data-mode="czerny"] #czerny { display: block; }
+
+  /* shared chrome relevant only to Read (piano + Read-only stats) */
+  body:not([data-mode="read"]) #piano,
+  body:not([data-mode="read"]) .score,
+  body:not([data-mode="read"]) #distribution-panel { display: none; }
+  /* clef toggle is used only by Read + Find; grand-staff modes manage their own clefs */
+  body[data-mode="harmony"] .clef-toggle,
+  body[data-mode="czerny"] .clef-toggle { display: none; }
+
+  /* settings groups, each visible only in its own mode */
+  body:not([data-mode="read"]) .mode-read-only { display: none; }
+  body:not([data-mode="find"]) .mode-find-only { display: none; }
+  body:not([data-mode="harmony"]) .mode-harmony-only { display: none; }
+  body:not([data-mode="czerny"]) .mode-czerny-only { display: none; }
+  /* MIDI rows: shown wherever you play notes (Read/Harmony/Czerny), hidden in Find */
+  body[data-mode="find"] .mode-play { display: none; }
 
   /* --- mode picker overlay --- */
   .mode-picker {
@@ -604,6 +683,49 @@
       </div>
     </section>
 
+    <section id="harmony">
+      <div class="harmony-header">
+        <div class="harmony-chord">
+          <span class="harmony-name" id="harmony-name">—</span>
+          <span class="harmony-roman" id="harmony-roman"></span>
+        </div>
+        <div class="harmony-meta">
+          <span class="harmony-key"><span class="label">Key</span> <b id="harmony-keyname">C</b></span>
+          <span class="harmony-step"><span id="harmony-step">1</span> / <span id="harmony-total">4</span></span>
+        </div>
+      </div>
+      <div class="grand-staff-wrap">
+        <div class="grand-staff" id="harmony-staff"></div>
+      </div>
+      <div class="harmony-feedback" id="harmony-feedback">Connect your MIDI keyboard and play the chord shown.</div>
+      <div class="input-row" style="margin-top: 14px;">
+        <button type="button" id="harmony-reveal" class="ghost">Show notes</button>
+        <button type="button" id="harmony-skip" class="ghost">Skip chord</button>
+        <button type="button" id="harmony-new" class="wide">New progression</button>
+      </div>
+    </section>
+
+    <section id="czerny">
+      <div class="czerny-header">
+        <div class="czerny-title">
+          <span class="czerny-num" id="czerny-num">1</span>
+          <span class="czerny-name" id="czerny-name">—</span>
+        </div>
+        <div class="czerny-meta">
+          <span class="czerny-progress" id="czerny-progress">0 / 0</span>
+          <button type="button" id="czerny-studies" class="ghost">Studies ▾</button>
+          <button type="button" id="czerny-restart" class="ghost">Restart</button>
+        </div>
+      </div>
+      <div class="czerny-feedback" id="czerny-feedback"></div>
+      <div class="czerny-score-wrap">
+        <div id="czerny-score"></div>
+      </div>
+      <div class="czerny-picker" id="czerny-picker" hidden>
+        <div class="czerny-grid" id="czerny-grid"></div>
+      </div>
+    </section>
+
     <div class="piano" id="piano" aria-label="Piano keyboard">
       <div class="piano-inner">
         <div class="row" id="white-row"></div>
@@ -629,6 +751,15 @@
         <input type="range" id="accidental-rate" min="0" max="100" step="5" value="30">
         <span id="accidental-rate-val" style="min-width:40px; text-align:right;">30%</span>
       </div>
+      <div class="row mode-play">
+        <label for="midi-input" style="min-width: 110px;">MIDI input</label>
+        <input type="checkbox" id="midi-input" checked>
+        <span style="font-size:12px;">Play answers on a USB keyboard (octave-exact)</span>
+      </div>
+      <div class="row mode-play" id="midi-status-row" style="display:none;">
+        <span style="min-width: 110px;"></span>
+        <span id="midi-status" style="font-size:12px; color:#7a7a86;"></span>
+      </div>
       <div class="row">
         <label for="show-labels" style="min-width: 110px;">Key labels</label>
         <input type="checkbox" id="show-labels" checked>
@@ -645,8 +776,74 @@
           <span>English (CDE)</span>
         </label>
       </div>
+      <div class="row mode-harmony-only">
+        <label for="harmony-per-round" style="min-width: 110px;">Chords per round</label>
+        <input type="range" id="harmony-per-round" min="1" max="4" step="1" value="1">
+        <span id="harmony-per-round-val" style="min-width:40px; text-align:right;">1</span>
+      </div>
+      <div class="row mode-harmony-only">
+        <label for="harmony-progression" style="min-width: 110px;">Progression</label>
+        <select id="harmony-progression">
+          <option value="mixed">Mixed</option>
+          <option value="I-IV-V-I">I – IV – V – I</option>
+          <option value="ii-V-I">ii – V – I</option>
+          <option value="I-V-vi-IV">I – V – vi – IV</option>
+          <option value="I-vi-IV-V">I – vi – IV – V</option>
+        </select>
+      </div>
+      <div class="row mode-harmony-only">
+        <label for="harmony-keymode" style="min-width: 110px;">Keys</label>
+        <select id="harmony-keymode">
+          <option value="circle">Circle of fifths (advance)</option>
+          <option value="random">Random</option>
+          <option value="fixed">Selected keys</option>
+        </select>
+      </div>
+      <div class="row mode-harmony-only" id="harmony-key-row" style="align-items: flex-start;">
+        <label style="min-width: 110px;">Keys to drill</label>
+        <div id="harmony-keys" style="display:flex; flex-wrap:wrap; gap:6px 12px; flex:1;">
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="0">C</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="1">G</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="2">D</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="3">A</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="4">E</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="5">B</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="6">G♭</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="7">D♭</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="8">A♭</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="9">E♭</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="10">B♭</label>
+          <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; min-width:auto; padding:4px 0;"><input type="checkbox" value="11">F</label>
+        </div>
+      </div>
+      <div class="row mode-harmony-only">
+        <label for="harmony-chords" style="min-width: 110px;">Chords</label>
+        <select id="harmony-chords">
+          <option value="triads">Triads (3 notes)</option>
+          <option value="sevenths">Seventh chords (4 notes)</option>
+          <option value="mixed">Mixed (triads + 7ths)</option>
+        </select>
+      </div>
+      <div class="row mode-czerny-only">
+        <label style="min-width: 110px;">Hands</label>
+        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+          <input type="radio" name="czerny-hands" value="both" checked><span>Both</span>
+        </label>
+        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+          <input type="radio" name="czerny-hands" value="right"><span>Right</span>
+        </label>
+        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+          <input type="radio" name="czerny-hands" value="left"><span>Left</span>
+        </label>
+      </div>
       <p class="mode-read-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
         Pitch-class only: octave doesn't matter. Enharmonic spellings (e.g. C# / Db) are both accepted.
+      </p>
+      <p class="mode-harmony-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
+        Read the chord on the grand staff and play it (both hands) on your MIDI keyboard — octave-exact. Walks common progressions around the circle of fifths so you learn how chords function in a key.
+      </p>
+      <p class="mode-czerny-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
+        Czerny Op. 139, 100 Progressive Studies. Play each note/chord on your MIDI keyboard; the cursor advances when you're correct. Tempo is ignored — note accuracy only. Needs a desktop browser with Web MIDI (Chrome/Edge).
       </p>
       <p class="mode-find-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
         Find Note: tap every position matching the prompt name within the current clef's range (naturals only). Tap a placed note to remove it. Drag a placed note up or down to move it. Undo rewinds the last action; Clear wipes everything.
@@ -677,12 +874,22 @@
         <span class="mode-option-title">Find Note</span>
         <span class="mode-option-desc">Given a note name (도 / C), tap every matching key on the piano.</span>
       </button>
+      <button type="button" class="mode-option" data-pick-mode="harmony">
+        <span class="mode-option-title">Harmony</span>
+        <span class="mode-option-desc">Read &amp; play chords on a grand staff — learn harmony and the circle of fifths. (MIDI keyboard)</span>
+      </button>
+      <button type="button" class="mode-option" data-pick-mode="czerny">
+        <span class="mode-option-title">Czerny Op. 139</span>
+        <span class="mode-option-desc">Play the 100 Progressive Studies; the app checks your notes as you go. (MIDI keyboard)</span>
+      </button>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.3/build/cjs/vexflow.js"></script>
   <script src="./render.js"></script>
   <script src="./mode-find.js"></script>
+  <script src="./mode-harmony.js"></script>
+  <script src="./mode-czerny.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

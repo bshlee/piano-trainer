@@ -138,6 +138,9 @@ const resetBtn = document.getElementById('reset');
 const clefToggle = document.getElementById('clef-toggle');
 const accSlider = document.getElementById('accidental-rate');
 const showLabelsCheckbox = document.getElementById('show-labels');
+const midiInputCheckbox = document.getElementById('midi-input');
+const midiStatusEl = document.getElementById('midi-status');
+const midiStatusRow = document.getElementById('midi-status-row');
 const pianoEl = document.getElementById('piano');
 const accSliderVal = document.getElementById('accidental-rate-val');
 const notesPerStripEl = document.getElementById('notes-per-strip');
@@ -244,20 +247,36 @@ function unlockAudio() {
   window.addEventListener(ev, unlockAudio, { once: false, passive: true, capture: true });
 });
 
-// Sine-partial additive synthesis with a hammer-strike noise burst.
-// Each partial has its own amplitude + decay so higher harmonics fade first,
-// which is what makes a piano tone evolve over time. Slight inharmonicity
-// (higher partials a few cents sharp) adds a touch of acoustic-string realism.
+// Additive piano synthesis, tuned to sound like a struck acoustic string
+// rather than a pure-sine organ. The realism comes from four things working
+// together — each one fixes a specific "synthy" artifact:
+//   1. Detuned unison strings. Real pianos have 2–3 strings per note, very
+//      slightly mistuned. Summing two copies a fraction of a cent apart makes
+//      them beat against each other, which is the "alive"/shimmer quality a
+//      single oscillator can never have.
+//   2. A two-stage amplitude decay. A piano drops fast for the first ~150 ms
+//      (the percussive "ping") then sustains on a long, slow tail. A single
+//      exponential — what we had before — is the dead giveaway of a synth.
+//   3. A lowpass that closes over time, so the tone gets darker as it rings
+//      out (the high partials die first on a real string). Without this the
+//      sustain stays buzzy and electronic.
+//   4. Stretched (inharmonic) partials: upper harmonics sit slightly sharp,
+//      following the standard f_n = n·f0·√(1+B·n²) string-stiffness model.
+//
+// [harmonic, amplitude, decay-multiplier] — higher partials are quieter and
+// fade sooner (smaller multiplier ⇒ shorter ring).
 const PARTIALS = [
-  // [harmonic, amplitude, decay (s), inharmonicity (cents)]
-  [1, 1.00, 3.0,  0],
-  [2, 0.60, 2.0,  2],
-  [3, 0.35, 1.5,  5],
-  [4, 0.22, 1.1,  9],
-  [5, 0.14, 0.8, 14],
-  [6, 0.09, 0.6, 20],
-  [7, 0.05, 0.45, 27],
+  [1, 1.00, 1.00],
+  [2, 0.50, 0.80],
+  [3, 0.26, 0.62],
+  [4, 0.16, 0.50],
+  [5, 0.10, 0.40],
+  [6, 0.06, 0.32],
+  [7, 0.04, 0.26],
+  [8, 0.025, 0.22],
 ];
+const INHARMONICITY = 0.00035; // string-stiffness coefficient B
+const UNISON_DETUNE = [-0.7, 0.7]; // cents — the two strings of the unison
 
 function playMidi(midi) {
   const ctx = getAudioCtx();
@@ -267,46 +286,64 @@ function playMidi(midi) {
   // pick up the events even if the context just resumed.
   const t0 = ctx.currentTime + 0.01;
 
-  // Real pianos: higher notes decay faster. Halve the decay every 2 octaves above C4.
-  const pitchDecay = Math.pow(0.5, (midi - 60) / 24);
+  // Overall ring time: higher notes decay faster and shorter (real strings).
+  const dur = Math.max(0.7, 6.5 * Math.pow(0.5, (midi - 60) / 26));
 
   const master = ctx.createGain();
-  master.gain.value = 0.32;
+  master.gain.value = 0.42;
   master.connect(ctx.destination);
 
+  // Time-varying lowpass: bright on the attack, darkening into the sustain.
+  // This is what turns the tail from "buzzy synth" into "string ringing out".
+  const tone = ctx.createBiquadFilter();
+  tone.type = 'lowpass';
+  tone.Q.value = 0.4;
+  const startCut = Math.min(f0 * 16, 13000);
+  const endCut = Math.min(f0 * 4.5, 3800);
+  tone.frequency.setValueAtTime(startCut, t0);
+  tone.frequency.exponentialRampToValueAtTime(endCut, t0 + 0.55);
+  tone.connect(master);
+
   let maxEnd = 0;
-  for (const [n, amp, baseDecay, cents] of PARTIALS) {
-    const decay = baseDecay * pitchDecay;
-    if (f0 * n > 16000) continue; // skip partials past Nyquist-ish range
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = f0 * n;
-    osc.detune.value = cents;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0, t0);
-    g.gain.linearRampToValueAtTime(amp, t0 + 0.004); // sharp attack
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
-    osc.connect(g).connect(master);
-    osc.start(t0);
-    osc.stop(t0 + decay + 0.05);
-    maxEnd = Math.max(maxEnd, decay + 0.05);
+  for (const det of UNISON_DETUNE) {
+    for (const [n, amp, decayMul] of PARTIALS) {
+      // Inharmonic stretch: partials drift sharp with harmonic number.
+      const freq = f0 * n * Math.sqrt(1 + INHARMONICITY * n * n);
+      if (freq > 15000) continue; // past useful range
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.detune.value = det;
+      const g = ctx.createGain();
+      const decay = dur * decayMul;
+      const a = amp * 0.5; // halved: two strings sum back to ~unity
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(a, t0 + 0.005);       // soft, fast attack
+      g.gain.exponentialRampToValueAtTime(a * 0.32, t0 + 0.15); // percussive drop
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);  // long slow tail
+      osc.connect(g).connect(tone);
+      osc.start(t0);
+      osc.stop(t0 + decay + 0.05);
+      maxEnd = Math.max(maxEnd, decay + 0.05);
+    }
   }
 
-  // Hammer-strike thud: short bandpassed noise burst, tuned to the 2nd partial.
-  const thudDur = 0.05;
+  // Hammer noise: a brief lowpassed thump for the key-strike transient. Softer
+  // and darker than a bandpass ping so it reads as felt-on-string, not a click.
+  const thudDur = 0.04;
   const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * thudDur), ctx.sampleRate);
   const data = buf.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
   const noise = ctx.createBufferSource();
   noise.buffer = buf;
-  const bp = ctx.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.frequency.value = Math.min(f0 * 2, 6000);
-  bp.Q.value = 3;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = Math.min(f0 * 6, 4500);
+  lp.Q.value = 0.5;
   const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.35, t0);
+  noiseGain.gain.setValueAtTime(0.18, t0);
   noiseGain.gain.exponentialRampToValueAtTime(0.0005, t0 + thudDur);
-  noise.connect(bp).connect(noiseGain).connect(master);
+  noise.connect(lp).connect(noiseGain).connect(master);
   noise.start(t0);
   noise.stop(t0 + thudDur);
 }
@@ -344,12 +381,25 @@ function loadSettings() {
       clefMode: s.clefMode || 'treble',
       accidentalRate: typeof s.accidentalRate === 'number' ? s.accidentalRate : 0.30,
       showLabels: typeof s.showLabels === 'boolean' ? s.showLabels : false,
-      mode: (s.mode === 'read' || s.mode === 'find') ? s.mode : null,
+      mode: ['read', 'find', 'harmony', 'czerny'].includes(s.mode) ? s.mode : null,
       findNoteLang: s.findNoteLang === 'en' ? 'en' : 'ko',
       notesPerStrip: Number.isFinite(nps) && nps >= 1 && nps <= 4 ? nps : 1,
+      midiInput: typeof s.midiInput === 'boolean' ? s.midiInput : true,
+      // Harmony mode
+      harmonyProgression: typeof s.harmonyProgression === 'string' ? s.harmonyProgression : 'mixed',
+      harmonyKeyMode: ['random', 'fixed'].includes(s.harmonyKeyMode) ? s.harmonyKeyMode : 'circle',
+      harmonyKeyIndex: Number.isInteger(s.harmonyKeyIndex) ? s.harmonyKeyIndex : 0,
+      harmonyKeys: Array.isArray(s.harmonyKeys) && s.harmonyKeys.some((n) => Number.isInteger(n) && n >= 0 && n < 12)
+        ? s.harmonyKeys.filter((n) => Number.isInteger(n) && n >= 0 && n < 12)
+        : [0],
+      harmonyChords: ['triads', 'sevenths', 'mixed'].includes(s.harmonyChords) ? s.harmonyChords : 'triads',
+      harmonyPerRound: Number.isInteger(s.harmonyPerRound) && s.harmonyPerRound >= 1 && s.harmonyPerRound <= 4 ? s.harmonyPerRound : 1,
+      // Czerny mode
+      czernyHands: ['both', 'right', 'left'].includes(s.czernyHands) ? s.czernyHands : 'both',
+      czernyStudy: Number.isInteger(s.czernyStudy) && s.czernyStudy >= 1 && s.czernyStudy <= 100 ? s.czernyStudy : 1,
     };
   } catch {
-    return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false, mode: null, findNoteLang: 'ko', notesPerStrip: 1 };
+    return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false, mode: null, findNoteLang: 'ko', notesPerStrip: 1, midiInput: true, harmonyProgression: 'mixed', harmonyKeyMode: 'circle', harmonyKeyIndex: 0, harmonyKeys: [0], harmonyChords: 'triads', harmonyPerRound: 1, czernyHands: 'both', czernyStudy: 1 };
   }
 }
 function saveSettings() {
@@ -470,11 +520,31 @@ function submitPitchClass(pc, btnEl) {
   judge(pc);
 }
 
+// Octave-exact answer from a MIDI keyboard (Read Note only). The played key is
+// compared against the current target's *absolute* MIDI, so C4 ≠ C5. PianoTeq
+// makes the sound from the same MIDI stream, so we never call PT_Audio here.
+function submitMidi(midi) {
+  if (locked) return;
+  if (settings.mode !== 'read') return; // mirror handleKey()'s find-mode guard
+  const cur = currentStrip && currentStrip[currentIndex];
+  if (!cur) return;
+  const targetMidi = midiFromStepOctave(cur.step, cur.octave, cur.alter);
+  resolveJudge(midi === targetMidi, midi); // enharmonics share one MIDI number
+}
+
 function judge(answerPc) {
   const cur = currentStrip && currentStrip[currentIndex];
   if (!cur) return;
   const targetPc = pitchClass(cur.step, cur.alter);
-  const ok = answerPc === targetPc;
+  resolveJudge(answerPc === targetPc);
+}
+
+// Shared advance/retry/stats logic for both the pitch-class (typed/clicked) and
+// octave-exact (MIDI) answer paths. `ok` is the precomputed correctness boolean.
+function resolveJudge(ok, playedMidi) {
+  const cur = currentStrip && currentStrip[currentIndex];
+  if (!cur) return;
+  const played = (typeof playedMidi === 'number') ? 'played ' + describeMidi(playedMidi) : '';
   const N = currentStrip.length;
   const stripMode = N > 1;
   const isLast = currentIndex + 1 >= N;
@@ -514,8 +584,8 @@ function judge(answerPc) {
   staffWrap.classList.add('wrong');
   if (stripMode) {
     // Don't reveal — strip mode is retry-until-correct so the user has to
-    // actually identify the note.
-    feedbackEl.textContent = '✗ try again';
+    // actually identify the note. Naming the key they hit isn't a reveal.
+    feedbackEl.textContent = played ? `✗ ${played} — try again` : '✗ try again';
     feedbackEl.className = 'feedback wrong';
     saveStats();
     renderStats();
@@ -529,7 +599,7 @@ function judge(answerPc) {
   } else {
     // Single-note flashcard: reveal the answer and advance, matching the
     // original Read Note flow.
-    feedbackEl.textContent = '✗ was ' + describePitch(cur);
+    feedbackEl.textContent = played ? `✗ ${played} — was ${describePitch(cur)}` : '✗ was ' + describePitch(cur);
     feedbackEl.className = 'feedback wrong';
     saveStats();
     renderStats();
@@ -585,16 +655,33 @@ function describePitch(p) {
   return `${western} (${ko})`;
 }
 
+// Label for a played MIDI key, with octave (e.g. "C♯4 (도♯4)"). Black keys are
+// spelled as sharps. Used to tell the user exactly which key they hit on a miss.
+const PC_TO_SHARP = [['C',0],['C',1],['D',0],['D',1],['E',0],['F',0],['F',1],['G',0],['G',1],['A',0],['A',1],['B',0]];
+function describeMidi(midi) {
+  const pc = ((midi % 12) + 12) % 12;
+  const octave = Math.floor(midi / 12) - 1;
+  const [letter, alter] = PC_TO_SHARP[pc];
+  const acc = alter === 1 ? '♯' : '';
+  return `${letter}${acc}${octave} (${LETTER_TO_KO[letter]}${acc}${octave})`;
+}
+
 // ---------- mode dispatch ----------
+
+const MODE_LABELS = { read: 'Read', find: 'Find', harmony: 'Harmony', czerny: 'Czerny' };
 
 function applyMode(mode) {
   settings.mode = mode;
   saveSettings();
   bodyEl.dataset.mode = mode;
-  modeChipValue.textContent = mode === 'find' ? 'Find' : 'Read';
+  modeChipValue.textContent = MODE_LABELS[mode] || 'Read';
 
   if (mode === 'find') {
     if (window.PT_FindNote) window.PT_FindNote.start();
+  } else if (mode === 'harmony') {
+    if (window.PT_Harmony) window.PT_Harmony.start();
+  } else if (mode === 'czerny') {
+    if (window.PT_Czerny) window.PT_Czerny.start();
   } else {
     buildPiano(PIANO_RANGES.read);
     newQuestion();
@@ -612,7 +699,7 @@ modePicker.addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-pick-mode]');
   if (!btn) return;
   const mode = btn.dataset.pickMode;
-  if (mode !== 'read' && mode !== 'find') return;
+  if (!MODE_LABELS[mode]) return;
   hidePicker();
   applyMode(mode);
 });
@@ -639,9 +726,10 @@ clefToggle.addEventListener('click', (e) => {
   syncClefToggle();
   if (settings.mode === 'find' && window.PT_FindNote) {
     window.PT_FindNote.start();
-  } else {
+  } else if (settings.mode === 'read') {
     newQuestion();
   }
+  // Harmony / Czerny manage their own clef context (grand staff) — toggle is hidden there.
 });
 function syncClefToggle() {
   clefToggle.querySelectorAll('button').forEach(b => {
@@ -673,6 +761,14 @@ showLabelsCheckbox.addEventListener('change', () => {
 
 function applyShowLabels() {
   pianoEl.classList.toggle('no-labels', !settings.showLabels);
+}
+
+if (midiInputCheckbox) {
+  midiInputCheckbox.addEventListener('change', () => {
+    settings.midiInput = midiInputCheckbox.checked;
+    saveSettings();
+    updateMidiState();
+  });
 }
 
 langRadios.forEach(r => {
@@ -709,13 +805,111 @@ resetBtn.addEventListener('click', () => {
   renderStats();
 });
 
+// ---------- MIDI input ----------
+// Web MIDI lets the user play answers on a USB keyboard (e.g. Roland FP-10).
+// Chrome/Edge desktop only — Safari/iOS has no Web MIDI, so this degrades to a
+// disabled toggle there while typing/clicking keep working. The single message
+// handler maintains a live set of held notes and routes note-ons to whichever
+// mode is active (Read = one note; Harmony = chord set; Czerny = note stream).
+
+let midiAccess = null;      // MIDIAccess object once granted
+let midiBound = false;      // are input handlers currently attached?
+const heldNotes = new Set(); // MIDI numbers currently pressed (chord modes read this)
+
+function midiSupported() {
+  return typeof navigator !== 'undefined' && !!navigator.requestMIDIAccess;
+}
+
+function setMidiStatus(text) {
+  if (!midiStatusEl || !midiStatusRow) return;
+  midiStatusEl.textContent = text || '';
+  midiStatusRow.style.display = text ? '' : 'none';
+}
+
+function handleMidiMessage(e) {
+  const [status, note, velocity] = e.data;
+  const command = status & 0xf0;
+  const isNoteOn = command === 0x90 && velocity > 0;
+  const isNoteOff = command === 0x80 || (command === 0x90 && velocity === 0);
+
+  if (isNoteOff) {
+    heldNotes.delete(note);
+    // Harmony re-checks the held set on release; Czerny tracks held notes too.
+    if (settings.mode === 'harmony' && window.PT_Harmony) window.PT_Harmony.onMidi(note, heldNotes, false);
+    else if (settings.mode === 'czerny' && window.PT_Czerny) window.PT_Czerny.onNoteOff(note);
+    return;
+  }
+  if (!isNoteOn) return;
+
+  heldNotes.add(note);
+  // Route the note-on to the active mode.
+  if (settings.mode === 'read') {
+    submitMidi(note);
+  } else if (settings.mode === 'harmony' && window.PT_Harmony) {
+    window.PT_Harmony.onMidi(note, heldNotes, true);
+  } else if (settings.mode === 'czerny' && window.PT_Czerny) {
+    window.PT_Czerny.onNoteOn(note);
+  }
+}
+
+function bindMidiInputs() {
+  if (!midiAccess) return;
+  let names = [];
+  midiAccess.inputs.forEach((input) => {
+    input.onmidimessage = handleMidiMessage;
+    if (input.name) names.push(input.name);
+  });
+  midiBound = true;
+  setMidiStatus(names.length ? '🎹 ' + names.join(', ') : 'No MIDI device found — connect your keyboard.');
+}
+
+function unbindMidiInputs() {
+  if (midiAccess) {
+    midiAccess.inputs.forEach((input) => { input.onmidimessage = null; });
+  }
+  midiBound = false;
+}
+
+function enableMidi() {
+  if (midiBound) return;
+  if (midiAccess) { bindMidiInputs(); return; }
+  setMidiStatus('Connecting…');
+  navigator.requestMIDIAccess({ sysex: false }).then((access) => {
+    midiAccess = access;
+    // Rebind on hotplug (FP-10 connected/disconnected mid-session).
+    access.onstatechange = () => { if (settings.midiInput) bindMidiInputs(); };
+    bindMidiInputs();
+  }).catch(() => {
+    setMidiStatus('MIDI access denied or unavailable.');
+  });
+}
+
+function disableMidi() {
+  unbindMidiInputs();
+  setMidiStatus('');
+}
+
+// Reconcile the live MIDI connection with settings + browser support.
+function updateMidiState() {
+  if (!midiSupported()) {
+    if (midiInputCheckbox) midiInputCheckbox.disabled = true;
+    setMidiStatus('Not supported in this browser — use Chrome on desktop.');
+    return;
+  }
+  if (midiInputCheckbox) midiInputCheckbox.disabled = false;
+  if (settings.midiInput) enableMidi();
+  else disableMidi();
+}
+
 // ---------- shared API for mode-find.js ----------
 
 window.PT_Audio = { play: playMidi };
 window.PT_Pitch = {
   LETTER_TO_KO,
   PC_TO_LETTER_NATURAL,
+  STEP_TO_PC,
   midiFromStepOctave,
+  describeMidi,
 };
 window.PT_Piano = {
   build: buildPiano,
@@ -723,6 +917,11 @@ window.PT_Piano = {
 };
 window.PT_Settings = {
   get: () => settings,
+  save: saveSettings,
+};
+window.PT_Midi = {
+  isSupported: midiSupported,
+  updateState: updateMidiState,
 };
 
 // ---------- boot ----------
@@ -733,6 +932,8 @@ accSliderVal.textContent = accSlider.value + '%';
 notesPerStripEl.value = String(settings.notesPerStrip);
 notesPerStripValEl.textContent = String(settings.notesPerStrip);
 showLabelsCheckbox.checked = settings.showLabels;
+if (midiInputCheckbox) midiInputCheckbox.checked = settings.midiInput;
+updateMidiState(); // reconnect an already-enabled keyboard / disable on Safari
 langRadios.forEach(r => { r.checked = (r.value === settings.findNoteLang); });
 renderStats();
 
@@ -751,6 +952,10 @@ window.addEventListener('resize', () => {
       renderCurrentStrip();
     } else if (settings.mode === 'find' && window.PT_FindNote) {
       window.PT_FindNote.handleResize();
+    } else if (settings.mode === 'harmony' && window.PT_Harmony) {
+      window.PT_Harmony.handleResize();
+    } else if (settings.mode === 'czerny' && window.PT_Czerny) {
+      window.PT_Czerny.handleResize();
     }
   });
 });

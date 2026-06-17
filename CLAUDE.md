@@ -6,8 +6,9 @@ Live at **https://bshlee.github.io/piano-trainer/** (GitHub Pages, deploys from 
 
 ## Hard constraints — don't violate without asking
 
-- **No build step.** Four plain files (`index.html`, `render.js`, `mode-find.js`, `app.js`) plus VexFlow via CDN. Opening `index.html` directly must work. Don't introduce Vite/webpack/Node tooling. No ES modules — they break `file://` loading. New cross-file APIs are hung off the `window.PT_*` namespaces from `app.js`.
-- **No npm dependencies.** All third-party code is loaded via `<script src="https://cdn..."`.
+- **No build step.** Plain files (`index.html`, `render.js`, `app.js`, and one `mode-*.js` per mode) plus libraries via CDN. Opening `index.html` directly must work *for Read/Find/Harmony*. Don't introduce Vite/webpack/Node tooling. No ES modules — they break `file://` loading. New cross-file APIs are hung off the `window.PT_*` namespaces from `app.js`. (Exception: `tools/split-czerny.mjs` is an offline, dev-only data-prep script — its *output* is static files; it is never loaded by the app, so the no-build property holds.)
+- **No npm dependencies.** All third-party code is loaded via `<script src="https://cdn..."`. Two CDN libs today: **VexFlow** (always) and **OpenSheetMusicDisplay (OSMD)** (lazy-injected by `mode-czerny.js` only when Czerny mode is first opened). OSMD bundles its own VexFlow internally; it does not replace the app's VexFlow usage.
+- **Czerny mode needs an http(s) origin**, not `file://` — it `fetch()`es score files from `data/czerny/`, which `file://` blocks. The deployed Pages site works; locally run `python3 -m http.server`. The other three modes still work from `file://`.
 - **No secrets, no API keys, no backend.** Everything runs client-side. State persists in `localStorage` only. Don't add API calls or external services.
 - **Mobile-first.** Every change must remain usable on iPhone (iOS Chrome + Safari). Touch targets ≥ 44px; layout must reflow on narrow viewports; audio must work after the iOS unlock pattern.
 - **Don't replace VexFlow** without asking — it's chosen for SVG rendering quality on retina + mobile.
@@ -16,10 +17,14 @@ Live at **https://bshlee.github.io/piano-trainer/** (GitHub Pages, deploys from 
 
 | File | Role |
 |---|---|
-| `index.html` | Markup, inline `<style>`, script tags. Loads VexFlow from `cdn.jsdelivr.net`. Hosts the mode-picker overlay and both mode sections (`#read-note`, `#find-note`). |
+| `index.html` | Markup, inline `<style>`, script tags. Loads VexFlow from `cdn.jsdelivr.net`. Hosts the mode-picker overlay and the four mode sections (`#read-note`, `#find-note`, `#harmony`, `#czerny`). |
 | `render.js`  | `window.renderNote(container, pitch)` draws clef + one note (Read Note, single-note mode). `window.renderClefOnly(container, clef)` draws an empty staff with just the clef. `window.renderStrip(container, pitches, currentIndex)` draws N (1–4) whole notes side-by-side on a single-clef staff for Read Note's multi-note strip; when N > 1 a small blue triangular caret is drawn under the note at `currentIndex` to mark the active one. `window.renderFindStaff(container, clef, pitches, marks)` draws a 200-px-tall staff with N notes for Find Note (whole notes, displayed width capped at 480 px, centered via `.find-staff svg { margin: 0 auto }`). `marks` drive feedback colors: `'correct'` (green), `'wrong'` (red), `'miss'` (ghost-green; added to the voice even if not in `pitches`). `renderFindStaff` internally calls `ctx.scale(SCALE, SCALE)` with `SCALE = 1.3` so glyphs and line spacing render 30% bigger — see the "Rendering & coordinate system" section below — and returns `{bottomLineY, stepPx, svgWidth, svgHeight, noteXs}` in **SVG-canvas (post-scale) units**. `renderStrip` / `renderNote` use native VexFlow units (no `ctx.scale`). |
 | `app.js`     | Shared infrastructure + Read Note mode: pitch utils, piano UI (`buildPiano(range)`), Web Audio synth, persistence, distribution stats, mode picker, mode dispatch. Exposes `window.PT_Audio`, `PT_Pitch`, `PT_Piano`, `PT_Settings`. |
 | `mode-find.js` | Find Note mode: prompts a natural note, computes target MIDIs in the clef's range, listens for pointer events on the staff SVG (pointerdown → preview marker → pointerup → toggle), submits/judges, manages the Submit↔Next button swap. Exposes `window.PT_FindNote`. |
+| `mode-harmony.js` | Harmony mode: generates diatonic chord progressions in a key (circle-of-fifths order), builds RH triad + LH root, judges the held MIDI set (octave-exact) and advances through the progression. All music theory (major-scale spelling, triads, Roman numerals) lives here. Exposes `window.PT_Harmony` (`start`, `onMidi`, `handleResize`). Renders via `window.renderHarmony`. |
+| `mode-czerny.js` | Czerny mode: lazy-loads OSMD, renders a study's MusicXML, builds an ordered event list from the OSMD cursor (`{notes:[{midi,staff}]}` per onset), and matches MIDI note-ons against the current event to advance the cursor (tempo-free). Study 1–100 picker, Hands setting, per-study completion. Exposes `window.PT_Czerny` (`start`, `onNoteOn`, `onNoteOff`, `handleResize`). |
+| `data/czerny/` | `NNN.musicxml` (per study) + `index.json` (`[{n,title,measures}]`), fetched at runtime. Generated by `tools/split-czerny.mjs`. `001.musicxml` is currently the user's provided sample (see "Czerny mode" below). |
+| `tools/split-czerny.mjs` | Offline, dev-only Node splitter: combined Op. 139 MusicXML → per-study files + `index.json`. Not loaded by the app. |
 | `README.md`  | Human-facing docs (features, usage, dev setup). |
 | `SETUP.md`   | Step-by-step new-device onboarding (clone, SSH key, push). |
 
@@ -32,10 +37,11 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 3. **typed-answer parsing** — `parseAnswer()` (returns pitch-class 0–11 or null)
 4. **DOM refs** — all `getElementById` lookups at top, including mode picker / chip / Find Note refs
 5. **piano keyboard** — `buildPiano(range)` generates white/black keys for the MIDI range; clicks route through `handleKey()` which no-ops in Find Note (piano is hidden)
-6. **audio** — Web Audio additive-synthesis piano tone + iOS unlock pattern
+6. **audio** — Web Audio additive piano tone (detuned unison strings, two-stage decay, time-varying lowpass, inharmonic partials) + iOS unlock pattern
 7. **game state** — `loadSettings/Stats/Distribution` + saves; `settings` has `mode` (`'read'`/`'find'`/null) and `findNoteLang` (`'ko'`/`'en'`)
-8. **render / judge / submit** (Read Note) — `newQuestion`, `submitTyped`, `submitPitchClass`, `judge`
+8. **render / judge / submit** (Read Note) — `newQuestion`, `submitTyped`, `submitPitchClass`, `submitMidi`, `judge` (pitch-class), `resolveJudge(ok)` (shared advance/retry/stats body used by both answer paths)
 9. **mode dispatch** — `applyMode()`, `showPicker()`, `hidePicker()`, picker + mode-chip handlers
+9b. **MIDI input** — `// ---------- MIDI input` section: Web MIDI lifecycle (`updateMidiState`, `enableMidi`/`disableMidi`, `bindMidiInputs`, `handleMidiMessage`). `handleMidiMessage` maintains a live `heldNotes` Set (parses note-off too) and **routes by mode**: Read → `submitMidi(note)`; Harmony → `PT_Harmony.onMidi(note, heldNotes, isOn)` (fired on note-on *and* note-off so releases re-check the chord); Czerny → `PT_Czerny.onNoteOn/onNoteOff`. No mode plays audio — an external MIDI source does.
 10. **event wiring** — listeners for inputs/toggles; clef toggle dispatches by current mode
 11. **shared API** — `window.PT_Audio`, `PT_Pitch`, `PT_Piano`, `PT_Settings` for mode-find.js
 12. **boot** — sync UI to settings; if no saved mode → show picker, else `applyMode(settings.mode)`
@@ -43,8 +49,9 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 ## Design choices the user has agreed to (don't re-litigate)
 
 ### Read Note mode (the original drill)
-- **Pitch class only** — answers are octave-agnostic. C4 and C5 both accept `C` / `도`.
+- **Pitch class only** (typed/clicked answers) — octave-agnostic. C4 and C5 both accept `C` / `도`.
 - **Enharmonic equivalents accepted** — `C#` ≡ `Db`. The drill is "which piano key", not "spelling".
+- **USB-MIDI keyboard input** (Settings → "MIDI input", default **on**) — play the answer on a connected MIDI piano (e.g. Roland FP-10) instead of typing/clicking. Feeds into the same judge/strip/retry flow via `submitMidi(midi)`. Unlike typed/clicked input this is **octave-exact** — the played key's absolute MIDI must equal the target's (`midiFromStepOctave(step, octave, alter)`); C4 ≠ C5. Enharmonics still match (same key = same MIDI number). The app plays **no audio** on this path — an external MIDI sound source (PianoTeq etc.) owns the sound, so calling `PT_Audio.play` here would double the tone. Web MIDI is **Chrome/Edge desktop only** — on Safari/iOS the toggle is disabled with a hint and typing/clicking still work. On a wrong MIDI answer the feedback names the exact key played, with octave (`describeMidi(midi)`, black keys spelled as sharps) — e.g. `✗ played C4 — was C5` (single-note) or `✗ played C4 — try again` (strip mode, which still doesn't reveal the target). Typed/clicked answers carry no key info so their feedback is unchanged. Lives in the `// ---------- MIDI input` section of `app.js`; handles device hotplug via `MIDIAccess.onstatechange`; exposed as `window.PT_Midi = { isSupported, updateState }`.
 - **Korean solfège is the primary label** on piano white keys (bigger, dark). English is secondary (small, muted). The user explicitly chose this; there was once a lang toggle that got removed.
 - **Default: piano labels hidden.** Settings toggle re-enables them.
 - **Note ranges:** Treble `C4`–`C6`, Bass `C2`–`C4` (one ledger line above/below each staff).
@@ -87,10 +94,26 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 - Note heads cluster tightly (~70 px per note via formatter width clamp), so a 3-note answer doesn't sprawl across a 700-px staff.
 
 
+### Harmony mode
+- **Grand staff** (treble + bass joined by a brace, via `renderHarmony` in `render.js`). Read the chord shown and **play it on the MIDI keyboard** — LH plays the root (bass clef), RH plays the triad (treble clef). Header shows the chord **name + Roman numeral + key**.
+- **Theory generation** (all in `mode-harmony.js`): keys cycle the **circle of fifths** (`['C','G','D','A','E','B','Gb','Db','Ab','Eb','Bb','F']`, which double as VexFlow key-sig specs). `majorScale(key)` spells each degree (letter + alter ∈ {-1,0,1}); diatonic triads I ii iii IV V vi vii° with proper qualities. **Seventh chords** (Chords = Seventh/Mixed) add the degree-7 tone for a 4-note RH voicing — `SEVENTH_QUALITY`/`SEVENTH_ROMAN`/`SEVENTH_NAME` give `Imaj7 ii7 iii7 IVmaj7 V7 vi7 viiø7`; `buildChord(degree, seventh)` builds either, `showChord` picks per chord (always for Seventh, 50/50 for Mixed). Chord tones are **diatonic**, so notes render by **letter+octave only** — the key signature implies the accidentals (no per-note `Accidental` modifiers).
+- **Key selection** (Settings → Keys): `'circle'` advances around the circle on each completed progression; `'random'` jumps anywhere; `'fixed'` drills only the keys checked in the "Keys to drill" checkbox grid (`harmonyKeys`). The checkbox row only shows in `'fixed'` mode; at least one key must stay checked.
+- **Progressions**: canonical sets (`I–IV–V–I`, `ii–V–I`, `I–V–vi–IV`, `I–vi–IV–V`, or "Mixed"). A round walks one progression; finishing advances the key around the circle (or randomizes, per the Keys setting).
+- **Multi-chord rounds** (Settings → "Chords per round", `harmonyPerRound` 1–4): renders up to N consecutive chords of the progression side-by-side on the grand staff with a blue caret under the **active** chord (mirroring Read Note's strip). You play the highlighted chord → it flashes green and the caret advances; completed chords stay green, upcoming stay black. When the visible window is finished it slides to the next chunk of the progression; when the progression is exhausted a fresh one rolls (advancing the key in circle mode). `windowStart`/`windowChords`/`activeInWindow` hold the window state; `renderHarmony` takes `{keySpec, chords:[{treble,bass}], activeIndex, marks}` (legacy single-chord `{treble,bass}` shape still accepted). `N === 1` is the original one-chord-at-a-time flow.
+- **Judging**: octave-exact **set match** — the held MIDI set must equal the target (RH triad ∪ LH root) of the **active** chord. Re-checked on note-on *and* note-off, so releasing a wrong extra note lets a correct chord register. Wrong note → red flash + which key it was; correct → green + advance. "Show notes" reveals the note names; "Skip chord" / "New progression" controls.
+
+### Czerny mode (Op. 139 play-along)
+- Renders a study's **MusicXML via OSMD** (lazy-loaded from CDN on first entry) and walks it **note-by-note with the OSMD cursor**. You must play each note/chord to advance — **tempo is ignored, note accuracy only**.
+- **Event model** (`mode-czerny.js` `buildEvents`): walk `osmd.cursor.Iterator` (`CurrentVoiceEntries` → `Notes`); each cursor position = one event `{notes:[{midi, staff}]}`. MIDI = `note.halfTone + 12`; rests via `note.isRest()`; **staff index = `ParentStaff.idInMusicSheet`** (0 = top/right hand, 1 = bottom/left — works for both 2-staff scores and 2-part exports where each part's `Staff.Id` is 1).
+- **Matching**: per-event onset accumulator. A note-on that's in the current event's expected set accumulates; when all expected are played → advance (`osmd.cursor.next()`). A note-on **not** expected → error feedback and **block** (must play the right note to proceed). Rest/empty-for-hand events auto-skip. **Hands** setting (Both/Right/Left) filters expected notes by staff.
+- **Data**: `data/czerny/NNN.musicxml` + `index.json`, fetched at runtime (needs http origin — see constraints). `001.musicxml` is **the user's provided sample** — a ~160-measure, 2-part, music21-processed MusicXML that does **not** cleanly map to all 100 studies (no per-study delimiters, no tempo marks). The picker shows whatever `index.json` lists. To get the real 100 split, feed a properly-delimited Op. 139 MusicXML through `tools/split-czerny.mjs`.
+- Per-study completion persists in `piano-trainer:czerny:v1`. "Studies ▾" toggles the 1–N picker; "Restart" replays from the top.
+
 ### Mode picker
 - Full-screen overlay shown on **first launch only** (when `settings.mode` is null). After that, the app boots into the saved mode.
-- Topbar **Mode chip** (`Mode: Read ▾`) reopens the picker on demand.
-- Clef toggle is shared by both modes.
+- Topbar **Mode chip** (`Mode: Read ▾`) reopens the picker on demand. Four options: Read, Find, Harmony, Czerny.
+- Clef toggle is shared by Read + Find only (hidden in Harmony/Czerny — they use a fixed grand staff).
+- **Mode dispatch** in `app.js`: `MODE_LABELS` gates valid modes; `applyMode()` branches to each mode's `start()`; CSS `body[data-mode]` rules show one `<section>` and hide irrelevant chrome (`#piano`, `.score`, `#distribution-panel`, clef toggle). Settings groups are scoped by `.mode-{read|find|harmony|czerny}-only`; MIDI rows use `.mode-play` (shown in Read/Harmony/Czerny, hidden in Find).
 
 ## Rendering & coordinate system (Find Note staff)
 
@@ -112,34 +135,42 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 
 ## localStorage keys
 
-- `piano-trainer:settings:v1` — `{ clefMode, accidentalRate, showLabels, mode, findNoteLang, notesPerStrip }`
-  - `mode`: `'read' | 'find' | null` (null on first launch → triggers mode picker)
+- `piano-trainer:settings:v1` — `{ clefMode, accidentalRate, showLabels, mode, findNoteLang, notesPerStrip, midiInput, harmonyProgression, harmonyKeyMode, harmonyKeyIndex, harmonyKeys, harmonyChords, harmonyPerRound, czernyHands, czernyStudy }`
+  - `mode`: `'read' | 'find' | 'harmony' | 'czerny' | null` (null on first launch → triggers mode picker)
   - `findNoteLang`: `'ko' | 'en'` (default `'ko'`)
   - `notesPerStrip`: integer 1–4, default `1` (Read Note multi-note strip size)
+  - `midiInput`: boolean, default `true` (USB-MIDI keyboard input; ignored where Web MIDI is unsupported)
+  - `harmonyProgression`: `'mixed' | 'I-IV-V-I' | 'ii-V-I' | 'I-V-vi-IV' | 'I-vi-IV-V'` (default `'mixed'`)
+  - `harmonyKeyMode`: `'circle' | 'random' | 'fixed'` (default `'circle'`); `harmonyKeyIndex`: 0–11 into the circle-of-fifths array (the *current* key)
+  - `harmonyKeys`: array of 0–11 circle indices (default `[0]` = C) — the keys drilled in `'fixed'` mode (multi-select checkboxes; one → stays put, many → random pick per progression avoiding immediate repeat)
+  - `harmonyChords`: `'triads' | 'sevenths' | 'mixed'` (default `'triads'`) — triad (3 notes) vs diatonic seventh (4 notes); `'mixed'` randomly throws sevenths in per chord
+  - `harmonyPerRound`: integer 1–4 (default `1`) — how many consecutive progression chords show on the grand staff at once (multi-chord "round", caret-marked like Read Note's strip)
+  - `czernyHands`: `'both' | 'right' | 'left'` (default `'both'`); `czernyStudy`: last study number (default `1`)
   - When adding new fields, prefer additive defaults over bumping `v1` so existing stats survive.
 - `piano-trainer:stats:v1` — `{ correct, total, streak, best }` (Read Note only)
 - `piano-trainer:dist:v1` — note-frequency distribution `{ byNote, naturals, sharps, flats, treble, bass, total }` (Read Note only)
+- `piano-trainer:czerny:v1` — `{ completed: { <n>: true } }` (per-study completion in Czerny mode)
 
 If you change a schema in a backwards-incompatible way, bump the `:v1` suffix to `:v2` so old data is ignored (don't try to migrate — this is a personal app, fresh state is fine).
 
 ## How modes work (and how to add a new one)
 
-The app dispatches by `settings.mode`. Two modes today: `'read'` and `'find'`. Each mode owns:
+The app dispatches by `settings.mode`. Four modes today: `'read'`, `'find'`, `'harmony'`, `'czerny'`. Each mode owns:
 - A `<section>` in `index.html` (toggled visible via `body[data-mode]` CSS rules).
-- A "start" entry point that builds the piano (via `window.PT_Piano.build(range, {extended})`) and renders its prompt.
-- Its own submit/judge path. Read Note lives inline in `app.js`; Find Note lives in `mode-find.js` and is exposed as `window.PT_FindNote`.
+- A "start" entry point. Read lives inline in `app.js`; the others live in `mode-*.js` and expose `window.PT_FindNote` / `PT_Harmony` / `PT_Czerny`.
+- Its own input/judge path. MIDI is routed by mode in `handleMidiMessage` (see Code structure §9b); pointer input (Find) and typed/click input (Read) are wired in their own files.
 
 Shared infrastructure exposed by `app.js` for other modes to use:
-- `window.PT_Audio.play(midi)` — piano-tone synthesis
-- `window.PT_Pitch.LETTER_TO_KO`, `PC_TO_LETTER_NATURAL`, `midiFromStepOctave(step,oct,alter)`
+- `window.PT_Audio.play(midi)` — piano-tone synthesis (Read only; MIDI modes stay silent)
+- `window.PT_Pitch.LETTER_TO_KO`, `PC_TO_LETTER_NATURAL`, `STEP_TO_PC`, `midiFromStepOctave(step,oct,alter)`, `describeMidi(midi)`
 - `window.PT_Piano.build(range)`, `.ranges` (only `read` defined today)
-- `window.PT_Settings.get()` — current settings object (mutate via `applyMode` / event handlers, then `saveSettings`)
+- `window.PT_Settings.get()` / `.save()` — current settings object (mutate then `save()`)
 
-To add a third mode (e.g. intervals):
-1. Add a `<section id="mode-intervals">` in `index.html`; gate it with `body[data-mode="intervals"]` CSS. Also add CSS to hide whatever shared chrome (`.score`, `#distribution-panel`, `#piano`) is irrelevant for the new mode.
-2. Add `'intervals'` as a valid value in `loadSettings()` and the mode-picker option button.
-3. Create `mode-intervals.js`, expose `window.PT_ModeIntervals.start()`. If the mode reuses the piano, the existing `handleKey()` dispatch already routes via `settings.mode`; if not (like Find Note), guard with `if (settings.mode === '<name>') return;`.
-4. Branch `applyMode()` to call the new mode's `start()`.
+To add a fifth mode (e.g. intervals):
+1. Add a `<section id="intervals">` in `index.html`; show it via `body[data-mode="intervals"] #intervals { display:block }` and hide irrelevant chrome. Add a picker button `data-pick-mode="intervals"`.
+2. Add `'intervals'` to the `loadSettings()` mode allow-list and to `MODE_LABELS` in `app.js` (the picker handler + chip label both key off it).
+3. Create `mode-intervals.js`, expose `window.PT_ModeIntervals` with `start()` (+ `onMidi`/`onNoteOn` if MIDI-driven, `handleResize`). Add a `<script>` before `app.js`.
+4. Branch `applyMode()` to call `start()`, route MIDI in `handleMidiMessage`, and add a `handleResize` branch in the resize listener.
 
 ## Dev workflow
 
@@ -167,6 +198,9 @@ GitHub Pages config: source = "Deploy from a branch", branch = `main`, folder = 
 1. Open `index.html` in Chrome. First-ever load shows the mode picker; pick **Read Note**.
 2. Read Note (single-note): take a treble round, a bass round, and a "both" round; type Western + Korean answers; click a white key and a black key. Score / streak / distribution should all update. Wrong answer reveals the correct pitch and auto-advances.
 3. Read Note (multi-note): bump "Notes per round" to 3 in Settings. The staff shows three notes side-by-side with a blue caret under the first. Answer correctly → caret slides to the next note (no new strip yet); finish all three → a new strip rolls in. Answer wrong → pink wash + `✗ try again` (no answer reveal), caret stays on the same note. Streak resets to 0 on wrong but doesn't on caret-advance. Slider change while answering should regenerate the strip in place.
+3b. Read Note (MIDI input, Chrome desktop + a connected MIDI keyboard): Settings → enable **MIDI input**; approve the browser prompt; `#midi-status` shows the device name. Play the **exact** note shown → green advance; play the **right letter, wrong octave** → judged wrong (octave-exact). Confirm the app itself stays silent (external sound source only). Unplug/replug mid-session → status updates and input keeps working. In Safari/iOS the toggle is disabled with a "use Chrome desktop" hint while typing/clicking still answer. Switching to Find Note makes played keys do nothing.
+3c. **Harmony** (Chrome desktop + MIDI keyboard): pick Harmony. Grand staff shows a chord with key signature; header shows name + Roman numeral + key. Play the exact chord (LH root + RH triad) → green ✓ and advance; wrong/missing note → red flash naming the bad key, stays put. Finishing the progression rolls a new one and the key advances around the circle of fifths. "Show notes" reveals names. App stays silent (PianoTeq only).
+3d. **Czerny** (served over http, e.g. `python3 -m http.server`; MIDI keyboard): pick Czerny → a study renders via OSMD with the cursor on the first note, progress `0 / N`. Play the notes in order → cursor advances regardless of tempo; chords need all notes; a wrong note shows `✗ … expected …` and blocks until corrected. "Studies ▾" opens the 1–N picker; "Restart" goes to the top; finishing marks the study done (green in the picker). Try Hands = Right/Left. (On `file://` it shows the "serve over http" hint instead.)
 4. Click the topbar Mode chip → switch to **Find Note**. Confirm:
    - Piano is hidden; `.score` and `#distribution-panel` are hidden too.
    - Tall staff renders with the chosen clef.
@@ -185,16 +219,19 @@ GitHub Pages config: source = "Deploy from a branch", branch = `main`, folder = 
 ## Future roadmap
 
 **Planned add-ons for Read Note** (designed, not yet implemented — see `/Users/shlee/.claude/plans/now-i-want-to-modular-neumann.md`):
-- **Mic Input** — accept piano-played answers via `getUserMedia` + autocorrelation/YIN pitch detection. Toggle in Settings; gated by user gesture for iOS. Synergizes with the multi-note strip (true sight-reading: eye on the next note while playing the current one).
+- **Mic Input** — accept piano-played answers via `getUserMedia` + autocorrelation/YIN pitch detection, for pianos without a USB-MIDI out. Toggle in Settings; gated by user gesture for iOS. (USB-MIDI input has shipped — see below — and is the preferred path when the piano has MIDI; mic input would extend the same idea to acoustic/non-MIDI pianos.)
 
 **Recently shipped** (was on this list):
-- **Multi-Note Strip** — 1–4 notes per strip with retry-on-wrong + caret-marked current note. See Read Note design section above.
+- **Harmony mode** — grand-staff chord-reading with circle-of-fifths progressions + Roman numerals (covers much of the old "chord identification" idea). See the Harmony design section.
+- **Czerny Op. 139 play-along** — OSMD-rendered scores with a tempo-free note-accuracy follow engine. See the Czerny design section. *Open follow-up:* real per-study data — the provided sample isn't the full delimited 100 (see Czerny section + `tools/split-czerny.mjs`).
+- **USB-MIDI Input** — play answers on a connected MIDI keyboard (octave-exact, Chrome/Edge desktop). External MIDI sound source makes the audio.
+- **Multi-Note Strip** — 1–4 notes per strip with retry-on-wrong + caret-marked current note.
 
 **Other confirmed (don't build without confirmation):**
 - Interval recognition mode
-- Chord identification mode
 - Key signature drill
 - Audio drill (hear note → identify)
+- Harmony extensions: seventh chords, minor keys, LH triads (v1 is major-key triads, LH root)
 
 **Possible but not requested:**
 - PWA manifest for proper home-screen install

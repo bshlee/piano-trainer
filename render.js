@@ -221,8 +221,114 @@ function renderStrip(container, pitches, currentIndex) {
   }
 }
 
+// Render a grand staff (treble + bass joined by a brace) with one OR several
+// chords side-by-side, for Harmony mode. `spec`:
+//   { keySpec, chords:[{treble:[{step,octave}], bass:[{step,octave}]}, …],
+//     activeIndex, marks }
+// Legacy single-chord shape { keySpec, treble, bass, marks } is still accepted.
+// - keySpec: a VexFlow major-key signature spec ('C','G','D',… 'Gb','Db','Ab','Eb','Bb','F').
+//   Notes are passed by letter+octave only; the key signature implies their accidentals
+//   (all chord tones here are diatonic to the key), matching real notation.
+// - activeIndex: which chord the caret marks (multi-chord rounds only).
+// - marks: 'correct' | 'wrong' | null — colors the active chord green / red for feedback.
+//   Already-completed chords (index < activeIndex) render green; the rest black.
+function renderHarmony(container, spec) {
+  container.innerHTML = '';
+  if (!spec) return;
+
+  // Normalize to a multi-chord shape; legacy specs carry treble/bass at top level.
+  const chords = spec.chords || [{ treble: spec.treble, bass: spec.bass }];
+  const activeIndex = Number.isInteger(spec.activeIndex) ? spec.activeIndex : -1;
+  const multi = chords.length > 1;
+
+  const parentW = (container.parentElement && container.parentElement.clientWidth - 20) || 460;
+  const width = Math.min(Math.max(parentW, 280), 480);
+  const height = 230;
+
+  const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
+  renderer.resize(width, height);
+  const ctx = renderer.getContext();
+
+  const staveX = 10;
+  const staveW = width - 20;
+  const treble = new VF.Stave(staveX, 10, staveW);
+  treble.addClef('treble');
+  const bass = new VF.Stave(staveX, 110, staveW);
+  bass.addClef('bass');
+  if (spec.keySpec && spec.keySpec !== 'C') {
+    treble.addKeySignature(spec.keySpec);
+    bass.addKeySignature(spec.keySpec);
+  }
+  treble.setContext(ctx).draw();
+  bass.setContext(ctx).draw();
+
+  // Brace on the left + barlines joining the two staves into a grand staff.
+  new VF.StaveConnector(treble, bass).setType(VF.StaveConnector.type.BRACE).setContext(ctx).draw();
+  new VF.StaveConnector(treble, bass).setType(VF.StaveConnector.type.SINGLE_LEFT).setContext(ctx).draw();
+  new VF.StaveConnector(treble, bass).setType(VF.StaveConnector.type.SINGLE_RIGHT).setContext(ctx).draw();
+
+  const DONE = '#1e7a32', WRONG = '#a02020';
+  const STEP_ORDER = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+  const rank = (n) => n.octave * 7 + STEP_ORDER[n.step];
+
+  // Per-chord feedback color: completed chords green, the active chord green/red on
+  // a mark, everything else black. Single-chord specs apply the mark to the one chord.
+  function colorFor(i) {
+    if (multi && i < activeIndex) return DONE;
+    if (i === activeIndex || !multi) {
+      if (spec.marks === 'correct') return DONE;
+      if (spec.marks === 'wrong') return WRONG;
+    }
+    return null;
+  }
+
+  function chordNote(clef, notes, i) {
+    const keys = notes
+      .slice()
+      .sort((a, b) => rank(a) - rank(b))
+      .map((n) => `${n.step.toLowerCase()}/${n.octave}`);
+    const sn = new VF.StaveNote({ clef, keys, duration: 'w' });
+    const c = colorFor(i);
+    if (c) sn.setStyle({ fillStyle: c, strokeStyle: c });
+    return sn;
+  }
+
+  const tNotes = chords.map((ch, i) => chordNote('treble', ch.treble, i));
+  const bNotes = chords.map((ch, i) => chordNote('bass', ch.bass, i));
+
+  // beat_value:1 means one whole note per beat, so N whole-note chords = N beats.
+  const count = chords.length;
+  const tVoice = new VF.Voice({ num_beats: count, beat_value: 1 });
+  tVoice.addTickables(tNotes);
+  const bVoice = new VF.Voice({ num_beats: count, beat_value: 1 });
+  bVoice.addTickables(bNotes);
+
+  const formatW = multi
+    ? Math.min(Math.max(count * 80 + 20, 120), staveW - 70)
+    : Math.max(staveW - 90, 120);
+  new VF.Formatter().joinVoices([tVoice]).joinVoices([bVoice]).format([tVoice, bVoice], formatW);
+  tVoice.draw(ctx, treble);
+  bVoice.draw(ctx, bass);
+
+  // Caret under the active chord (multi-chord rounds only), mirroring renderStrip.
+  if (multi && activeIndex >= 0 && activeIndex < tNotes.length) {
+    const x = tNotes[activeIndex].getAbsoluteX() + 7;
+    const yBase = height - 8;
+    const yTip = yBase - 12;
+    const half = 7;
+    const svg = container.querySelector('svg');
+    if (svg) {
+      const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pathEl.setAttribute('d', `M ${x - half} ${yBase} L ${x + half} ${yBase} L ${x} ${yTip} Z`);
+      pathEl.setAttribute('fill', '#7b8cff');
+      svg.appendChild(pathEl);
+    }
+  }
+}
+
 window.renderNote = renderNote;
 window.renderClefOnly = renderClefOnly;
 window.renderFindStaff = renderFindStaff;
 window.renderStrip = renderStrip;
+window.renderHarmony = renderHarmony;
 })();
