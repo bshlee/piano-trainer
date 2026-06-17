@@ -254,9 +254,11 @@ function unlockAudio() {
 //      slightly mistuned. Summing two copies a fraction of a cent apart makes
 //      them beat against each other, which is the "alive"/shimmer quality a
 //      single oscillator can never have.
-//   2. A two-stage amplitude decay. A piano drops fast for the first ~150 ms
-//      (the percussive "ping") then sustains on a long, slow tail. A single
+//   2. A two-stage amplitude decay. A piano drops fast for the first ~120 ms
+//      (the percussive "ping") then rings out on a short, dry tail. A single
 //      exponential — what we had before — is the dead giveaway of a synth.
+//      The tail is deliberately short so repeated notes don't pile up into a
+//      reverb-like wash.
 //   3. A lowpass that closes over time, so the tone gets darker as it rings
 //      out (the high partials die first on a real string). Without this the
 //      sustain stays buzzy and electronic.
@@ -276,7 +278,7 @@ const PARTIALS = [
   [8, 0.025, 0.22],
 ];
 const INHARMONICITY = 0.00035; // string-stiffness coefficient B
-const UNISON_DETUNE = [-0.7, 0.7]; // cents — the two strings of the unison
+const UNISON_DETUNE = [-0.4, 0.4]; // cents — the two strings of the unison (light: too much reads as a wash)
 
 function playMidi(midi) {
   const ctx = getAudioCtx();
@@ -286,8 +288,9 @@ function playMidi(midi) {
   // pick up the events even if the context just resumed.
   const t0 = ctx.currentTime + 0.01;
 
-  // Overall ring time: higher notes decay faster and shorter (real strings).
-  const dur = Math.max(0.7, 6.5 * Math.pow(0.5, (midi - 60) / 26));
+  // Overall ring time: kept short and dry so notes don't pile up into a
+  // reverb-like wash. Higher notes decay faster and shorter (real strings).
+  const dur = Math.max(0.5, 2.3 * Math.pow(0.5, (midi - 60) / 22));
 
   const master = ctx.createGain();
   master.gain.value = 0.42;
@@ -319,8 +322,8 @@ function playMidi(midi) {
       const a = amp * 0.5; // halved: two strings sum back to ~unity
       g.gain.setValueAtTime(0, t0);
       g.gain.linearRampToValueAtTime(a, t0 + 0.005);       // soft, fast attack
-      g.gain.exponentialRampToValueAtTime(a * 0.32, t0 + 0.15); // percussive drop
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);  // long slow tail
+      g.gain.exponentialRampToValueAtTime(a * 0.25, t0 + 0.12); // percussive drop
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);  // short, dry tail
       osc.connect(g).connect(tone);
       osc.start(t0);
       osc.stop(t0 + decay + 0.05);
