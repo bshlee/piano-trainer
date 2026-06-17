@@ -241,14 +241,64 @@ function unlockAudio() {
   src.connect(ctx.destination);
   src.start(0);
   audioUnlocked = true;
+  // Start fetching the real piano samples now (on the user gesture) so they're
+  // ready by the time the user actually plays a note. No-op on failure.
+  loadSampledPiano();
 }
 
 ['touchstart', 'touchend', 'mousedown', 'click', 'keydown'].forEach(ev => {
   window.addEventListener(ev, unlockAudio, { once: false, passive: true, capture: true });
 });
 
-// Additive piano synthesis, tuned to sound like a struck acoustic string
-// rather than a pure-sine organ. The realism comes from four things working
+// ---------- sampled piano (real recorded grand, loaded from CDN) ----------
+//
+// The synth below will always sound a little electronic — it's pure sine
+// partials. For an actual acoustic-piano tone we lazy-load a sampled grand
+// (recorded notes) from a CDN the first time audio is needed. This needs an
+// http(s) origin + network, so it works on the deployed Pages site but not
+// from a bare file:// page or offline — in those cases the fetch fails and we
+// fall back to playSynth() so there's still sound. The samples carry their own
+// natural decay, so the "reverb"/ring is whatever a real piano does.
+
+const SOUNDFONT_SRC = 'https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js';
+let sfInstrument = null; // the loaded instrument, or null until/unless ready
+let sfLoading = null;    // in-flight load promise, so we only load once
+
+function loadSampledPiano() {
+  if (sfLoading) return sfLoading;
+  const ctx = getAudioCtx();
+  if (!ctx) return Promise.resolve(null);
+  sfLoading = new Promise((resolve) => {
+    const build = () => {
+      if (!window.Soundfont) { resolve(null); return; }
+      window.Soundfont
+        .instrument(ctx, 'acoustic_grand_piano', { soundfont: 'MusyngKite' })
+        .then((inst) => { sfInstrument = inst; resolve(inst); })
+        .catch(() => resolve(null)); // offline / blocked → stay on synth
+    };
+    if (window.Soundfont) { build(); return; }
+    const s = document.createElement('script');
+    s.src = SOUNDFONT_SRC;
+    s.onload = build;
+    s.onerror = () => resolve(null);
+    document.head.appendChild(s);
+  });
+  return sfLoading;
+}
+
+// Public entry point: prefer the real sampled piano; fall back to the synth
+// until (or unless) the samples are available.
+function playMidi(midi) {
+  if (sfInstrument) {
+    try { sfInstrument.play(midi, undefined, { gain: 2.2 }); return; }
+    catch (e) { /* fall through to synth */ }
+  }
+  loadSampledPiano(); // kick off (or no-op if already loading/loaded)
+  playSynth(midi);
+}
+
+// Additive piano synthesis (fallback). Tuned to sound like a struck acoustic
+// string rather than a pure-sine organ. The realism comes from four things working
 // together — each one fixes a specific "synthy" artifact:
 //   1. Detuned unison strings. Real pianos have 2–3 strings per note, very
 //      slightly mistuned. Summing two copies a fraction of a cent apart makes
@@ -280,7 +330,7 @@ const PARTIALS = [
 const INHARMONICITY = 0.00035; // string-stiffness coefficient B
 const UNISON_DETUNE = [-0.4, 0.4]; // cents — the two strings of the unison (light: too much reads as a wash)
 
-function playMidi(midi) {
+function playSynth(midi) {
   const ctx = getAudioCtx();
   if (!ctx) return;
   const f0 = 440 * Math.pow(2, (midi - 69) / 12);

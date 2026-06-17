@@ -44,7 +44,7 @@ First launch shows a mode picker; pick once and it sticks. The topbar **Mode chi
 - Needs a **desktop browser with Web MIDI** and to be **served over http** (the deployed site, or `python3 -m http.server`) — it loads score files from `data/czerny/`. See [`data/czerny/README.md`](./data/czerny/README.md) for the data pipeline. *(The current build ships one sample study; the full delimited 100-study split is pending real per-study data.)*
 
 ### Shared across modes
-- **Piano sounds** via Web Audio additive synthesis (Read/Find) — modelled on a struck acoustic string (detuned unison strings, percussive-then-sustain decay, a tone that darkens as it rings out) rather than a pure-sine tone. MIDI modes (Harmony/Czerny) make no sound — your external MIDI instrument/VST does.
+- **Piano sounds** (Read/Find): a **real recorded grand piano** loaded from a CDN on first use (needs a network + http(s) origin — works on the live site, served locally, or any http server). If the samples can't load (offline, or opening the file directly via `file://`), it falls back to a built-in Web Audio synth so there's still sound. MIDI modes (Harmony/Czerny) make no sound — your external MIDI instrument/VST does.
 - **iOS audio unlock** on first tap anywhere — no second-tap dead zone.
 - All state persists in `localStorage`; nothing leaves the device.
 
