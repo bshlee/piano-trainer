@@ -120,6 +120,7 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 - **Flow**: correct → `✓ Perfect 4th`, green wash, auto-advance ~900 ms. Wrong → `✗ was Minor 6th`, pink wash, the correct quality/number buttons get `.reveal-correct` (green outline) and the user's differing picks `.reveal-wrong` (red outline), Submit swaps to **Next**, no auto-advance (mirrors Find Note's `awaitingNext` pattern). Group clicks are ignored while locked/awaiting Next.
 - **Audio**: the dyad is played (both notes together via `PT_Audio.play` ×2) when a question appears and again on submit. On a cold refresh straight into Intervals the first dyad may be silent (AudioContext still locked until the first gesture — standard app-wide contract); it self-heals from the first tap.
 - **No MIDI, no piano, no stats** — answers are buttons only; `.mode-play` rows are hidden like in Find Note.
+- **Hints panel** — a `<details class="settings ivl-hints">` below Submit, **closed by default**, holding 4 charts translated from the user's Korean theory textbook: two diatonic tables (half steps contained (E–F/B–C) → quality, for 1/4/5/8 and 2/3/6/7) and two dd↔AA quality ladders with "wider →" / "← narrower" arrows. Pure HTML/CSS, no JS or persisted state — reopening the page collapses it again.
 
 ### Mode picker
 - Full-screen overlay shown on **first launch only** (when `settings.mode` is null). After that, the app boots into the saved mode.

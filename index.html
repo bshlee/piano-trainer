@@ -544,6 +544,57 @@
   .ivl-group button.reveal-wrong { outline: 2px solid var(--wrong); color: var(--wrong); background: var(--panel); }
   #intervals[data-level="basic"] .chromatic-only { display: none; }
 
+  /* Intervals hint charts (translated from the user's theory textbook) */
+  .ivl-hints h4 {
+    margin: 14px 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .ivl-hint-scroll { overflow-x: auto; }
+  .ivl-hint-table {
+    width: 100%;
+    min-width: 300px;
+    border-collapse: collapse;
+    font-size: 13px;
+    text-align: center;
+  }
+  .ivl-hint-table th, .ivl-hint-table td {
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 6px 4px;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .ivl-hint-table th { font-weight: 600; }
+  .ivl-hint-table td.q { color: var(--ink); font-weight: 600; background: rgba(123,140,255,0.08); }
+  .ivl-hint-note { margin: 8px 0 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
+  .ivl-ladder-wrap { overflow-x: auto; }
+  .ivl-ladder-label { font-size: 11px; color: var(--muted); padding: 2px 4px; }
+  .ivl-ladder-label.wider { text-align: right; }
+  .ivl-ladder {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+    width: max-content;
+    min-width: 100%;
+    justify-content: space-between;
+  }
+  .ivl-ladder .chip {
+    background: var(--bg);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 8px;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .ivl-ladder .chip.center { border-color: var(--accent); color: var(--accent); }
+  .ivl-ladder .arrow { color: var(--muted); font-size: 12px; }
+
   /* --- mode-scoped section visibility --- */
   #read-note, #find-note, #harmony, #czerny, #intervals { display: none; }
   body[data-mode="read"] #read-note { display: block; }
@@ -780,6 +831,49 @@
       <div class="input-row" style="margin-top: 14px;">
         <button id="intervals-submit" class="wide">Submit</button>
       </div>
+
+      <details class="settings ivl-hints" style="margin-top: 14px;">
+        <summary>Hints</summary>
+
+        <h4>Diatonic intervals — 1st · 4th · 5th · 8th</h4>
+        <div class="ivl-hint-scroll">
+          <table class="ivl-hint-table">
+            <tr><th>Half steps</th><th>1st</th><th>4th</th><th>5th</th><th>8th</th></tr>
+            <tr><th>0</th><td class="q">Perfect</td><td class="q">Augmented</td><td>—</td><td>—</td></tr>
+            <tr><th>1</th><td>—</td><td class="q">Perfect</td><td class="q">Perfect</td><td>—</td></tr>
+            <tr><th>2</th><td>—</td><td>—</td><td class="q">Diminished</td><td class="q">Perfect</td></tr>
+          </table>
+        </div>
+
+        <h4>Diatonic intervals — 2nd · 3rd · 6th · 7th</h4>
+        <div class="ivl-hint-scroll">
+          <table class="ivl-hint-table">
+            <tr><th>Half steps</th><th>2nd</th><th>3rd</th><th>6th</th><th>7th</th></tr>
+            <tr><th>0</th><td class="q">Major</td><td class="q">Major</td><td>—</td><td>—</td></tr>
+            <tr><th>1</th><td class="q">Minor</td><td class="q">Minor</td><td class="q">Major</td><td class="q">Major</td></tr>
+            <tr><th>2</th><td>—</td><td>—</td><td class="q">Minor</td><td class="q">Minor</td></tr>
+          </table>
+        </div>
+        <p class="ivl-hint-note">Half steps = how many of the natural half steps (E–F, B–C) the interval contains.</p>
+
+        <h4>Quality ladder — 1st · 4th · 5th · 8th</h4>
+        <div class="ivl-ladder-wrap">
+          <div class="ivl-ladder-label wider">wider →</div>
+          <div class="ivl-ladder">
+            <span class="chip">Doubly dim</span><span class="arrow">↔</span><span class="chip">Dim</span><span class="arrow">↔</span><span class="chip center">Perfect</span><span class="arrow">↔</span><span class="chip">Aug</span><span class="arrow">↔</span><span class="chip">Doubly aug</span>
+          </div>
+          <div class="ivl-ladder-label narrower">← narrower</div>
+        </div>
+
+        <h4>Quality ladder — 2nd · 3rd · 6th · 7th</h4>
+        <div class="ivl-ladder-wrap">
+          <div class="ivl-ladder-label wider">wider →</div>
+          <div class="ivl-ladder">
+            <span class="chip">Doubly dim</span><span class="arrow">↔</span><span class="chip">Dim</span><span class="arrow">↔</span><span class="chip center">Minor</span><span class="arrow">↔</span><span class="chip center">Major</span><span class="arrow">↔</span><span class="chip">Aug</span><span class="arrow">↔</span><span class="chip">Doubly aug</span>
+          </div>
+          <div class="ivl-ladder-label narrower">← narrower</div>
+        </div>
+      </details>
     </section>
 
     <div class="piano" id="piano" aria-label="Piano keyboard">

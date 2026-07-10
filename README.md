@@ -38,6 +38,7 @@ First launch shows a mode picker; pick once and it sticks. The topbar **Mode chi
 - **Basic** level (default): natural notes only — qualities you'll see are perfect/major/minor plus the two built-in oddballs (F–B augmented 4th, B–F diminished 5th).
 - **Chromatic** level (Settings → Level): notes can carry ♯, ♭, 𝄪, ♭♭, and qualities span **doubly diminished → doubly augmented**. (Diminished unisons don't exist, so they're never asked.)
 - Correct → green ✓ and auto-advance. Wrong → the right answer is revealed (correct buttons outlined green, your picks red) and the button becomes **Next** so you can study it.
+- A collapsible **Hints** panel (hidden by default) holds the reference charts: diatonic tables (half steps contained → quality) and the doubly-dim ↔ doubly-aug quality ladders.
 
 ### Harmony — read & play chords on a grand staff *(MIDI keyboard, desktop Chrome/Edge)*
 - A chord appears on a **grand staff** (both hands) with its **name + Roman numeral + key**. Play it on your MIDI keyboard: **left hand = root (bass), right hand = triad (treble)**.
