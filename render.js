@@ -1,42 +1,12 @@
-// VexFlow staff rendering for a single-note question.
-// Exposes one function on window: renderNote(container, pitch).
+// VexFlow staff rendering for all modes. Exposes render functions on window.
 
 (function () {
 const VF = window.Vex.Flow;
 
+// Render a single-note question. A one-pitch strip renders identically
+// (no caret, no spreading), so this just delegates to renderStrip.
 function renderNote(container, pitch) {
-  container.innerHTML = '';
-
-  const width = Math.min(container.parentElement.clientWidth - 20, 480);
-  const height = 180;
-
-  const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
-  renderer.resize(width, height);
-  const ctx = renderer.getContext();
-
-  const stave = new VF.Stave(10, 20, width - 20);
-  stave.addClef(pitch.clef === 'bass' ? 'bass' : 'treble');
-  stave.setContext(ctx).draw();
-
-  // VexFlow key format: "c/4", "c#/4", "cb/5"
-  const accChar = pitch.alter === 1 ? '#' : pitch.alter === -1 ? 'b' : '';
-  const key = `${pitch.step.toLowerCase()}${accChar}/${pitch.octave}`;
-
-  const note = new VF.StaveNote({
-    clef: pitch.clef === 'bass' ? 'bass' : 'treble',
-    keys: [key],
-    duration: 'w',
-  });
-
-  if (pitch.alter !== 0) {
-    note.addModifier(new VF.Accidental(pitch.alter === 1 ? '#' : 'b'), 0);
-  }
-
-  const voice = new VF.Voice({ num_beats: 4, beat_value: 4 });
-  voice.addTickables([note]);
-
-  new VF.Formatter().joinVoices([voice]).format([voice], width - 80);
-  voice.draw(ctx, stave);
+  renderStrip(container, [pitch], 0);
 }
 
 // Draw an empty staff showing only the chosen clef. Used by Find Note's prompt area.
@@ -326,7 +296,54 @@ function renderHarmony(container, spec) {
   }
 }
 
+// Render a harmonic dyad (two stacked whole notes) on a treble staff for
+// Intervals mode. `notes` is [{step, octave, alter}, {step, octave, alter}],
+// lower note first; alter ranges -2..2 (double flats/sharps allowed).
+//
+// The dyad is built as TWO voices formatted together rather than one two-key
+// StaveNote: VexFlow only auto-displaces noteheads whose staff lines differ
+// by exactly 0.5 (a second), so a unison inside a single chord note would
+// draw both heads in the same spot. Joined voices go through the collision
+// formatter, which x-shifts the second voice's head for unisons and seconds
+// and leaves wider intervals stacked normally — so the lower note must be
+// voice 1 (shifting the upper note right is the engraving convention).
+const INTERVAL_ACC = { '-2': 'bb', '-1': 'b', '1': '#', '2': '##' };
+function renderInterval(container, notes) {
+  container.innerHTML = '';
+
+  const width = Math.min(container.parentElement.clientWidth - 20, 480);
+  const height = 180;
+
+  const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
+  renderer.resize(width, height);
+  const ctx = renderer.getContext();
+
+  const stave = new VF.Stave(10, 20, width - 20);
+  stave.addClef('treble');
+  stave.setContext(ctx).draw();
+
+  const mkVoice = (p) => {
+    const acc = INTERVAL_ACC[String(p.alter || 0)] || '';
+    const note = new VF.StaveNote({
+      clef: 'treble',
+      keys: [`${p.step.toLowerCase()}${acc}/${p.octave}`],
+      duration: 'w',
+    });
+    if (acc) note.addModifier(new VF.Accidental(acc), 0);
+    const voice = new VF.Voice({ num_beats: 1, beat_value: 1 });
+    voice.addTickables([note]);
+    return voice;
+  };
+
+  const lower = mkVoice(notes[0]);
+  const upper = mkVoice(notes[1]);
+  new VF.Formatter().joinVoices([lower, upper]).format([lower, upper], width - 80);
+  lower.draw(ctx, stave);
+  upper.draw(ctx, stave);
+}
+
 window.renderNote = renderNote;
+window.renderInterval = renderInterval;
 window.renderClefOnly = renderClefOnly;
 window.renderFindStaff = renderFindStaff;
 window.renderStrip = renderStrip;

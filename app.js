@@ -438,7 +438,7 @@ function loadSettings() {
       clefMode: s.clefMode || 'treble',
       accidentalRate: typeof s.accidentalRate === 'number' ? s.accidentalRate : 0.30,
       showLabels: typeof s.showLabels === 'boolean' ? s.showLabels : false,
-      mode: ['read', 'find', 'harmony', 'czerny'].includes(s.mode) ? s.mode : null,
+      mode: ['read', 'find', 'harmony', 'czerny', 'intervals'].includes(s.mode) ? s.mode : null,
       findNoteLang: s.findNoteLang === 'en' ? 'en' : 'ko',
       notesPerStrip: Number.isFinite(nps) && nps >= 1 && nps <= 4 ? nps : 1,
       midiInput: typeof s.midiInput === 'boolean' ? s.midiInput : true,
@@ -454,9 +454,11 @@ function loadSettings() {
       // Czerny mode
       czernyHands: ['both', 'right', 'left'].includes(s.czernyHands) ? s.czernyHands : 'both',
       czernyStudy: Number.isInteger(s.czernyStudy) && s.czernyStudy >= 1 && s.czernyStudy <= 100 ? s.czernyStudy : 1,
+      // Intervals mode
+      intervalsLevel: s.intervalsLevel === 'chromatic' ? 'chromatic' : 'basic',
     };
   } catch {
-    return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false, mode: null, findNoteLang: 'ko', notesPerStrip: 1, midiInput: true, harmonyProgression: 'mixed', harmonyKeyMode: 'circle', harmonyKeyIndex: 0, harmonyKeys: [0], harmonyChords: 'triads', harmonyPerRound: 1, czernyHands: 'both', czernyStudy: 1 };
+    return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false, mode: null, findNoteLang: 'ko', notesPerStrip: 1, midiInput: true, harmonyProgression: 'mixed', harmonyKeyMode: 'circle', harmonyKeyIndex: 0, harmonyKeys: [0], harmonyChords: 'triads', harmonyPerRound: 1, czernyHands: 'both', czernyStudy: 1, intervalsLevel: 'basic' };
   }
 }
 function saveSettings() {
@@ -740,7 +742,18 @@ function describeMidi(midi) {
 
 // ---------- mode dispatch ----------
 
-const MODE_LABELS = { read: 'Read', find: 'Find', harmony: 'Harmony', czerny: 'Czerny' };
+const MODE_LABELS = { read: 'Read', find: 'Find', harmony: 'Harmony', czerny: 'Czerny', intervals: 'Intervals' };
+
+// Modes that live in their own mode-*.js file, keyed by settings.mode. Each
+// exposes start() and handleResize(). Read is the inline fallback in this file.
+// Lazy lookups because the mode scripts define their PT_* globals before app.js
+// but could in principle be missing (e.g. a script failed to load).
+const MODE_IMPL = {
+  find: () => window.PT_FindNote,
+  harmony: () => window.PT_Harmony,
+  czerny: () => window.PT_Czerny,
+  intervals: () => window.PT_Intervals,
+};
 
 function applyMode(mode) {
   settings.mode = mode;
@@ -748,12 +761,9 @@ function applyMode(mode) {
   bodyEl.dataset.mode = mode;
   modeChipValue.textContent = MODE_LABELS[mode] || 'Read';
 
-  if (mode === 'find') {
-    if (window.PT_FindNote) window.PT_FindNote.start();
-  } else if (mode === 'harmony') {
-    if (window.PT_Harmony) window.PT_Harmony.start();
-  } else if (mode === 'czerny') {
-    if (window.PT_Czerny) window.PT_Czerny.start();
+  if (MODE_IMPL[mode]) {
+    const impl = MODE_IMPL[mode]();
+    if (impl) impl.start();
   } else {
     buildPiano(PIANO_RANGES.read);
     newQuestion();
@@ -1022,12 +1032,9 @@ window.addEventListener('resize', () => {
   resizeRaf = requestAnimationFrame(() => {
     if (settings.mode === 'read' && currentStrip && currentStrip.length > 0) {
       renderCurrentStrip();
-    } else if (settings.mode === 'find' && window.PT_FindNote) {
-      window.PT_FindNote.handleResize();
-    } else if (settings.mode === 'harmony' && window.PT_Harmony) {
-      window.PT_Harmony.handleResize();
-    } else if (settings.mode === 'czerny' && window.PT_Czerny) {
-      window.PT_Czerny.handleResize();
+    } else if (MODE_IMPL[settings.mode]) {
+      const impl = MODE_IMPL[settings.mode]();
+      if (impl) impl.handleResize();
     }
   });
 });

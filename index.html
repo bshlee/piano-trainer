@@ -521,28 +521,55 @@
   .czerny-grid button.done { border-color: var(--correct); color: var(--correct); }
   .czerny-grid button.current { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+  /* --- Intervals mode --- */
+  .ivl-group { display: grid; gap: 6px; margin-top: 12px; }
+  .ivl-number { grid-template-columns: repeat(4, 1fr); }
+  .ivl-quality { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+  .ivl-group button {
+    min-height: 44px;
+    padding: 8px 6px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .ivl-group button.on { background: var(--accent); color: #fff; }
+  .ivl-group button.reveal-correct { outline: 2px solid var(--correct); color: var(--correct); }
+  .ivl-group button.on.reveal-correct { background: var(--correct); color: #fff; }
+  .ivl-group button.reveal-wrong { outline: 2px solid var(--wrong); color: var(--wrong); background: var(--panel); }
+  #intervals[data-level="basic"] .chromatic-only { display: none; }
+
   /* --- mode-scoped section visibility --- */
-  #read-note, #find-note, #harmony, #czerny { display: none; }
+  #read-note, #find-note, #harmony, #czerny, #intervals { display: none; }
   body[data-mode="read"] #read-note { display: block; }
   body[data-mode="find"] #find-note { display: block; }
   body[data-mode="harmony"] #harmony { display: block; }
   body[data-mode="czerny"] #czerny { display: block; }
+  body[data-mode="intervals"] #intervals { display: block; }
 
   /* shared chrome relevant only to Read (piano + Read-only stats) */
   body:not([data-mode="read"]) #piano,
   body:not([data-mode="read"]) .score,
   body:not([data-mode="read"]) #distribution-panel { display: none; }
-  /* clef toggle is used only by Read + Find; grand-staff modes manage their own clefs */
+  /* clef toggle is used only by Read + Find; the other modes fix their own clefs */
   body[data-mode="harmony"] .clef-toggle,
-  body[data-mode="czerny"] .clef-toggle { display: none; }
+  body[data-mode="czerny"] .clef-toggle,
+  body[data-mode="intervals"] .clef-toggle { display: none; }
 
   /* settings groups, each visible only in its own mode */
   body:not([data-mode="read"]) .mode-read-only { display: none; }
   body:not([data-mode="find"]) .mode-find-only { display: none; }
   body:not([data-mode="harmony"]) .mode-harmony-only { display: none; }
   body:not([data-mode="czerny"]) .mode-czerny-only { display: none; }
-  /* MIDI rows: shown wherever you play notes (Read/Harmony/Czerny), hidden in Find */
-  body[data-mode="find"] .mode-play { display: none; }
+  body:not([data-mode="intervals"]) .mode-intervals-only { display: none; }
+  /* MIDI rows: shown wherever you play notes (Read/Harmony/Czerny), hidden in button-answer modes */
+  body[data-mode="find"] .mode-play,
+  body[data-mode="intervals"] .mode-play { display: none; }
 
   /* --- mode picker overlay --- */
   .mode-picker {
@@ -726,6 +753,35 @@
       </div>
     </section>
 
+    <section id="intervals" data-level="basic">
+      <div class="staff-wrap" id="intervals-staff-wrap">
+        <div id="intervals-staff"></div>
+        <div class="feedback" id="intervals-feedback"></div>
+      </div>
+      <div class="ivl-group ivl-quality" id="intervals-quality" role="group" aria-label="Interval quality">
+        <button type="button" data-q="dd" class="chromatic-only">Doubly dim</button>
+        <button type="button" data-q="d">Diminished</button>
+        <button type="button" data-q="m">Minor</button>
+        <button type="button" data-q="P">Perfect</button>
+        <button type="button" data-q="M">Major</button>
+        <button type="button" data-q="A">Augmented</button>
+        <button type="button" data-q="AA" class="chromatic-only">Doubly aug</button>
+      </div>
+      <div class="ivl-group ivl-number" id="intervals-number" role="group" aria-label="Interval number">
+        <button type="button" data-n="1">1st</button>
+        <button type="button" data-n="2">2nd</button>
+        <button type="button" data-n="3">3rd</button>
+        <button type="button" data-n="4">4th</button>
+        <button type="button" data-n="5">5th</button>
+        <button type="button" data-n="6">6th</button>
+        <button type="button" data-n="7">7th</button>
+        <button type="button" data-n="8">8th</button>
+      </div>
+      <div class="input-row" style="margin-top: 14px;">
+        <button id="intervals-submit" class="wide">Submit</button>
+      </div>
+    </section>
+
     <div class="piano" id="piano" aria-label="Piano keyboard">
       <div class="piano-inner">
         <div class="row" id="white-row"></div>
@@ -836,6 +892,15 @@
           <input type="radio" name="czerny-hands" value="left"><span>Left</span>
         </label>
       </div>
+      <div class="row mode-intervals-only">
+        <label style="min-width: 110px;">Level</label>
+        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+          <input type="radio" name="intervals-level" value="basic" checked><span>Basic (naturals)</span>
+        </label>
+        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+          <input type="radio" name="intervals-level" value="chromatic"><span>Chromatic</span>
+        </label>
+      </div>
       <p class="mode-read-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
         Pitch-class only: octave doesn't matter. Enharmonic spellings (e.g. C# / Db) are both accepted.
       </p>
@@ -847,6 +912,9 @@
       </p>
       <p class="mode-find-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
         Find Note: tap every position matching the prompt name within the current clef's range (naturals only). Tap a placed note to remove it. Drag a placed note up or down to move it. Undo rewinds the last action; Clear wipes everything.
+      </p>
+      <p class="mode-intervals-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
+        Name the interval between the two stacked notes (quality + number). Basic uses natural notes only; Chromatic adds accidentals up to double sharps/flats and doubly diminished/augmented qualities.
       </p>
     </details>
 
@@ -882,6 +950,10 @@
         <span class="mode-option-title">Czerny Op. 139</span>
         <span class="mode-option-desc">Play the 100 Progressive Studies; the app checks your notes as you go. (MIDI keyboard)</span>
       </button>
+      <button type="button" class="mode-option" data-pick-mode="intervals">
+        <span class="mode-option-title">Intervals</span>
+        <span class="mode-option-desc">See two stacked notes and name the interval — quality + number.</span>
+      </button>
     </div>
   </div>
 
@@ -890,6 +962,7 @@
   <script src="./mode-find.js"></script>
   <script src="./mode-harmony.js"></script>
   <script src="./mode-czerny.js"></script>
+  <script src="./mode-intervals.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

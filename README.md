@@ -1,6 +1,6 @@
 # Sheet Music Trainer
 
-A tiny single-page web app for drilling sheet-music reading on the **treble (G-clef)** and **bass (F-clef)** staves. Four modes: read notes off the staff, find them on it, read & play chords (harmony), and play through Czerny Op. 139 with note-by-note checking.
+A tiny single-page web app for drilling sheet-music reading on the **treble (G-clef)** and **bass (F-clef)** staves. Five modes: read notes off the staff, find them on it, name intervals, read & play chords (harmony), and play through Czerny Op. 139 with note-by-note checking.
 
 🎹 **Live: https://bshlee.github.io/piano-trainer/**
 
@@ -32,6 +32,12 @@ First launch shows a mode picker; pick once and it sticks. The topbar **Mode chi
 - **Submit (wrong)** → pink wash, your placements recolor green/red, **missed targets appear as ghost-green notes** so you can see where the answer should have been. Submit swaps to **Next** — study at your own pace, click when ready.
 - **Undo** rewinds the last add / remove / move. **Clear** wipes all placements mid-round.
 - Treble range: A3–E6. Bass range: C2–E4. Naturals only (accidentals deliberately excluded).
+
+### Intervals — name the interval between two stacked notes
+- Two whole notes on a treble staff (lower note in the middle octave); answer by tapping a **Quality** button (Perfect / Major / Minor / Augmented / Diminished, …) plus a **Number** button (1st–8th), then Submit. The interval also plays as sound.
+- **Basic** level (default): natural notes only — qualities you'll see are perfect/major/minor plus the two built-in oddballs (F–B augmented 4th, B–F diminished 5th).
+- **Chromatic** level (Settings → Level): notes can carry ♯, ♭, 𝄪, ♭♭, and qualities span **doubly diminished → doubly augmented**. (Diminished unisons don't exist, so they're never asked.)
+- Correct → green ✓ and auto-advance. Wrong → the right answer is revealed (correct buttons outlined green, your picks red) and the button becomes **Next** so you can study it.
 
 ### Harmony — read & play chords on a grand staff *(MIDI keyboard, desktop Chrome/Edge)*
 - A chord appears on a **grand staff** (both hands) with its **name + Roman numeral + key**. Play it on your MIDI keyboard: **left hand = root (bass), right hand = triad (treble)**.
@@ -65,12 +71,13 @@ python3 -m http.server 8000
 
 ## Code structure
 
-- `index.html`  — markup + inline `<style>` + script tags (loaded in order: VexFlow → render.js → mode-find.js → mode-harmony.js → mode-czerny.js → app.js)
-- `render.js`   — VexFlow helpers: `renderNote`, `renderClefOnly`, `renderStrip`, `renderFindStaff`, `renderHarmony` (grand staff + chords for Harmony)
+- `index.html`  — markup + inline `<style>` + script tags (loaded in order: VexFlow → render.js → mode-find.js → mode-harmony.js → mode-czerny.js → mode-intervals.js → app.js)
+- `render.js`   — VexFlow helpers: `renderNote`, `renderClefOnly`, `renderStrip`, `renderFindStaff`, `renderHarmony` (grand staff + chords), `renderInterval` (two-note dyad for Intervals)
 - `app.js`      — shared infrastructure + Read Note: pitch utils, piano UI, Web Audio synth, persistence, MIDI input (routed by mode), mode picker, mode dispatch. Exposes `window.PT_Audio` / `PT_Pitch` / `PT_Piano` / `PT_Settings` for other modes.
 - `mode-find.js`   — Find Note mode: drag-to-place on the staff, snap math, submit/judge
 - `mode-harmony.js` — Harmony mode: chord/progression theory, grand-staff judging
 - `mode-czerny.js`  — Czerny mode: OSMD play-along, cursor follow engine
+- `mode-intervals.js` — Intervals mode: interval theory (number/quality), question generation, button-group answering
 - `data/czerny/`    — per-study MusicXML + `index.json` (see its README); `tools/split-czerny.mjs` generates them offline
 - `CLAUDE.md`   — conventions and design choices (read this if you're modifying the app)
 - `SETUP.md`    — getting set up on a new machine
@@ -121,7 +128,6 @@ Designed but not yet built (see [CLAUDE.md → Future roadmap](./CLAUDE.md#futur
 
 Other ideas (don't have to be in this order):
 
-- Interval recognition mode
 - Chord identification mode
 - Key signature drill
 - Audio drill (hear note → identify)
