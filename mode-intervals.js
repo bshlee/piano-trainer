@@ -85,8 +85,10 @@
   const feedbackEl = document.getElementById('intervals-feedback');
   const qualityGroupEl = document.getElementById('intervals-quality');
   const numberGroupEl = document.getElementById('intervals-number');
+  const lettersGroupEl = document.getElementById('intervals-letters');
   const submitBtn = document.getElementById('intervals-submit');
   const levelRadios = document.querySelectorAll('input[name="intervals-level"]');
+  const nameNotesToggle = document.getElementById('intervals-name-notes');
 
   function settings() { return window.PT_Settings.get(); }
 
@@ -98,6 +100,8 @@
   let locked = false;        // true during feedback (correct flash / reveal)
   let awaitingNext = false;  // wrong answer shown; Submit button acts as Next
   let advanceTimer = null;
+  let phase = 'interval';    // 'notes' (name notes first setting) | 'interval'
+  let noteIdx = 0;           // which note is being named: 0 = lower, 1 = upper
 
   function playCurrent() {
     if (!current || !window.PT_Audio) return;
@@ -109,10 +113,19 @@
     const level = settings().intervalsLevel;
     if (sectionEl) sectionEl.dataset.level = level;
     levelRadios.forEach((r) => { r.checked = (r.value === level); });
+    if (nameNotesToggle) nameNotesToggle.checked = !!settings().intervalsNameNotes;
+  }
+
+  const ALTER_GLYPH = { '-2': '♭♭', '-1': '♭', '0': '', '1': '♯', '2': '𝄪' };
+  function noteName(n) { return n.step + ALTER_GLYPH[String(n.alter)]; }
+
+  function promptNote() {
+    feedbackEl.textContent = noteIdx === 0 ? 'Name the lower note' : 'Name the upper note';
+    feedbackEl.className = 'feedback';
   }
 
   function clearMarks() {
-    [qualityGroupEl, numberGroupEl].forEach((group) => {
+    [qualityGroupEl, numberGroupEl, lettersGroupEl].forEach((group) => {
       if (!group) return;
       group.querySelectorAll('button').forEach((b) => {
         b.classList.remove('on', 'reveal-correct', 'reveal-wrong');
@@ -134,6 +147,10 @@
     staffWrapEl.classList.remove('correct', 'wrong');
     syncLevelUI();
     current = generate();
+    phase = settings().intervalsNameNotes ? 'notes' : 'interval';
+    noteIdx = 0;
+    if (sectionEl) sectionEl.dataset.phase = phase;
+    if (phase === 'notes') promptNote();
     window.renderInterval(staffEl, current.notes);
     playCurrent();
   }
@@ -149,7 +166,7 @@
 
   function submit() {
     if (awaitingNext) { start(); return; }
-    if (locked || !current) return;
+    if (locked || !current || phase === 'notes') return;
     if (!pickedQ || !pickedN) {
       feedbackEl.textContent = 'Pick a quality and a number';
       feedbackEl.className = 'feedback';
@@ -193,6 +210,33 @@
   wireGroup(qualityGroupEl, 'q', (v) => { pickedQ = v; });
   wireGroup(numberGroupEl, 'n', (v) => { pickedN = Number(v); });
 
+  // Note-naming phase: judged instantly per tap, retry on wrong (no reveal).
+  function flashBtn(btn, cls) {
+    btn.classList.add(cls);
+    setTimeout(() => btn.classList.remove(cls), 400);
+  }
+  if (lettersGroupEl) lettersGroupEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-letter]');
+    if (!btn || phase !== 'notes' || locked || !current) return;
+    if (btn.dataset.letter === current.notes[noteIdx].step) {
+      if (window.PT_Audio) window.PT_Audio.play(noteIdx === 0 ? current.midiLow : current.midiHigh);
+      flashBtn(btn, 'reveal-correct');
+      if (noteIdx === 0) {
+        noteIdx = 1;
+        promptNote();
+      } else {
+        phase = 'interval';
+        if (sectionEl) sectionEl.dataset.phase = phase;
+        feedbackEl.textContent = `✓ ${noteName(current.notes[0])} · ${noteName(current.notes[1])} — now the interval`;
+        feedbackEl.className = 'feedback correct';
+      }
+    } else {
+      feedbackEl.textContent = '✗ try again';
+      feedbackEl.className = 'feedback wrong';
+      flashBtn(btn, 'reveal-wrong');
+    }
+  });
+
   if (submitBtn) submitBtn.addEventListener('click', submit);
 
   levelRadios.forEach((r) => {
@@ -203,6 +247,13 @@
       window.PT_Settings.save();
       if (s.mode === 'intervals') start();
     });
+  });
+
+  if (nameNotesToggle) nameNotesToggle.addEventListener('change', () => {
+    const s = settings();
+    s.intervalsNameNotes = nameNotesToggle.checked;
+    window.PT_Settings.save();
+    if (s.mode === 'intervals') start();
   });
 
   window.PT_Intervals = {

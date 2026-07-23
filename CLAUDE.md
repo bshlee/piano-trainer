@@ -119,6 +119,7 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 - **Theory** (all in `mode-intervals.js`): quality = lookup of `semitones − BASE[number]` (`BASE = {1:0,2:2,3:4,4:5,5:7,6:9,7:11,8:12}`); perfect-class diff table `−2..+2 = dd,d,P,A,AA`, major-class `−3..+2 = dd,d,m,M,A,AA`.
 - **Flow**: correct → `✓ Perfect 4th`, green wash, auto-advance ~900 ms. Wrong → `✗ was Minor 6th`, pink wash, the correct quality/number buttons get `.reveal-correct` (green outline) and the user's differing picks `.reveal-wrong` (red outline), Submit swaps to **Next**, no auto-advance (mirrors Find Note's `awaitingNext` pattern). Group clicks are ignored while locked/awaiting Next.
 - **Audio**: the dyad is played (both notes together via `PT_Audio.play` ×2) when a question appears and again on submit. On a cold refresh straight into Intervals the first dyad may be silent (AudioContext still locked until the first gesture — standard app-wide contract); it self-heals from the first tap.
+- **Name notes setting** (Settings → "Name notes", `intervalsNameNotes`, default off): each question starts in a **notes phase** — the user names the lower then the upper note's **letter** (accidentals are visible on the staff, so only the letter is asked) via a 7-button `.ivl-letters` row (English letter big, Korean solfège small). Judged instantly per tap: correct → button flashes green, the named note sounds, prompt advances (`Name the lower note` → `Name the upper note`); wrong → `✗ try again` + red flash, **retry, no reveal** (mirrors Read Note strip). After both → feedback shows `✓ C · E — now the interval` and the phase switches to the normal interval quiz. Phase drives UI via `sectionEl.dataset.phase` (`'notes'` shows `.ivl-letters` and hides `.ivl-quality`/`.ivl-number`/`.ivl-submit-row`; `'interval'` is the normal layout). `submit()` no-ops during the notes phase. Unisons ask the same letter twice.
 - **No MIDI, no piano, no stats** — answers are buttons only; `.mode-play` rows are hidden like in Find Note.
 - **Hints panel** — a `<details class="settings ivl-hints">` below Submit, **closed by default**, holding 4 charts translated from the user's Korean theory textbook: two diatonic tables (half steps contained (E–F/B–C) → quality, for 1/4/5/8 and 2/3/6/7) and two dd↔AA quality ladders with "wider →" / "← narrower" arrows. Pure HTML/CSS, no JS or persisted state — reopening the page collapses it again.
 
@@ -148,7 +149,7 @@ Sections are clearly demarcated with `// ----------` headers. In order:
 
 ## localStorage keys
 
-- `piano-trainer:settings:v1` — `{ clefMode, accidentalRate, showLabels, mode, findNoteLang, notesPerStrip, midiInput, harmonyProgression, harmonyKeyMode, harmonyKeyIndex, harmonyKeys, harmonyChords, harmonyPerRound, czernyHands, czernyStudy, intervalsLevel }`
+- `piano-trainer:settings:v1` — `{ clefMode, accidentalRate, showLabels, mode, findNoteLang, notesPerStrip, midiInput, harmonyProgression, harmonyKeyMode, harmonyKeyIndex, harmonyKeys, harmonyChords, harmonyPerRound, czernyHands, czernyStudy, intervalsLevel, intervalsNameNotes }`
   - `mode`: `'read' | 'find' | 'harmony' | 'czerny' | 'intervals' | null` (null on first launch → triggers mode picker)
   - `findNoteLang`: `'ko' | 'en'` (default `'ko'`)
   - `notesPerStrip`: integer 1–4, default `1` (Read Note multi-note strip size)
@@ -160,6 +161,7 @@ Sections are clearly demarcated with `// ----------` headers. In order:
   - `harmonyPerRound`: integer 1–4 (default `1`) — how many consecutive progression chords show on the grand staff at once (multi-chord "round", caret-marked like Read Note's strip)
   - `czernyHands`: `'both' | 'right' | 'left'` (default `'both'`); `czernyStudy`: last study number (default `1`)
   - `intervalsLevel`: `'basic' | 'chromatic'` (default `'basic'`) — Intervals mode difficulty (naturals only vs accidentals + dd/AA qualities)
+  - `intervalsNameNotes`: boolean, default `false` — Intervals mode "Name notes" phase (name both note letters before the interval quiz)
   - When adding new fields, prefer additive defaults over bumping `v1` so existing stats survive.
 - `piano-trainer:stats:v1` — `{ correct, total, streak, best }` (Read Note only)
 - `piano-trainer:dist:v1` — note-frequency distribution `{ byNote, naturals, sharps, flats, treble, bass, total }` (Read Note only)

@@ -456,9 +456,10 @@ function loadSettings() {
       czernyStudy: Number.isInteger(s.czernyStudy) && s.czernyStudy >= 1 && s.czernyStudy <= 100 ? s.czernyStudy : 1,
       // Intervals mode
       intervalsLevel: s.intervalsLevel === 'chromatic' ? 'chromatic' : 'basic',
+      intervalsNameNotes: typeof s.intervalsNameNotes === 'boolean' ? s.intervalsNameNotes : false,
     };
   } catch {
-    return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false, mode: null, findNoteLang: 'ko', notesPerStrip: 1, midiInput: true, harmonyProgression: 'mixed', harmonyKeyMode: 'circle', harmonyKeyIndex: 0, harmonyKeys: [0], harmonyChords: 'triads', harmonyPerRound: 1, czernyHands: 'both', czernyStudy: 1, intervalsLevel: 'basic' };
+    return { clefMode: 'treble', accidentalRate: 0.30, showLabels: false, mode: null, findNoteLang: 'ko', notesPerStrip: 1, midiInput: true, harmonyProgression: 'mixed', harmonyKeyMode: 'circle', harmonyKeyIndex: 0, harmonyKeys: [0], harmonyChords: 'triads', harmonyPerRound: 1, czernyHands: 'both', czernyStudy: 1, intervalsLevel: 'basic', intervalsNameNotes: false };
   }
 }
 function saveSettings() {

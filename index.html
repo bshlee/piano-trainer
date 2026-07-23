@@ -543,6 +543,13 @@
   .ivl-group button.on.reveal-correct { background: var(--correct); color: #fff; }
   .ivl-group button.reveal-wrong { outline: 2px solid var(--wrong); color: var(--wrong); background: var(--panel); }
   #intervals[data-level="basic"] .chromatic-only { display: none; }
+  /* note-naming phase (Settings → Name notes): letters first, interval UI after */
+  .ivl-letters { grid-template-columns: repeat(7, 1fr); display: none; }
+  .ivl-letters button small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); margin-top: 1px; }
+  #intervals[data-phase="notes"] .ivl-letters { display: grid; }
+  #intervals[data-phase="notes"] .ivl-quality,
+  #intervals[data-phase="notes"] .ivl-number,
+  #intervals[data-phase="notes"] .ivl-submit-row { display: none; }
 
   /* Intervals hint charts (translated from the user's theory textbook) */
   .ivl-hints h4 {
@@ -809,6 +816,15 @@
         <div id="intervals-staff"></div>
         <div class="feedback" id="intervals-feedback"></div>
       </div>
+      <div class="ivl-group ivl-letters" id="intervals-letters" role="group" aria-label="Note name">
+        <button type="button" data-letter="C">C<small>도</small></button>
+        <button type="button" data-letter="D">D<small>레</small></button>
+        <button type="button" data-letter="E">E<small>미</small></button>
+        <button type="button" data-letter="F">F<small>파</small></button>
+        <button type="button" data-letter="G">G<small>솔</small></button>
+        <button type="button" data-letter="A">A<small>라</small></button>
+        <button type="button" data-letter="B">B<small>시</small></button>
+      </div>
       <div class="ivl-group ivl-quality" id="intervals-quality" role="group" aria-label="Interval quality">
         <button type="button" data-q="dd" class="chromatic-only">Doubly dim</button>
         <button type="button" data-q="d">Diminished</button>
@@ -828,7 +844,7 @@
         <button type="button" data-n="7">7th</button>
         <button type="button" data-n="8">8th</button>
       </div>
-      <div class="input-row" style="margin-top: 14px;">
+      <div class="input-row ivl-submit-row" style="margin-top: 14px;">
         <button id="intervals-submit" class="wide">Submit</button>
       </div>
 
@@ -995,6 +1011,11 @@
           <input type="radio" name="intervals-level" value="chromatic"><span>Chromatic</span>
         </label>
       </div>
+      <div class="row mode-intervals-only">
+        <label for="intervals-name-notes" style="min-width: 110px;">Name notes</label>
+        <input type="checkbox" id="intervals-name-notes">
+        <span style="font-size:12px;">Name both notes (도/C) before the interval</span>
+      </div>
       <p class="mode-read-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
         Pitch-class only: octave doesn't matter. Enharmonic spellings (e.g. C# / Db) are both accepted.
       </p>
@@ -1008,7 +1029,7 @@
         Find Note: tap every position matching the prompt name within the current clef's range (naturals only). Tap a placed note to remove it. Drag a placed note up or down to move it. Undo rewinds the last action; Clear wipes everything.
       </p>
       <p class="mode-intervals-only" style="margin: 10px 0 0; font-size: 12px; line-height: 1.5;">
-        Name the interval between the two stacked notes (quality + number). Basic uses natural notes only; Chromatic adds accidentals up to double sharps/flats and doubly diminished/augmented qualities.
+        Name the interval between the two stacked notes (quality + number). Basic uses natural notes only; Chromatic adds accidentals up to double sharps/flats and doubly diminished/augmented qualities. With "Name notes" on, first identify the lower and upper note's letter, then the interval.
       </p>
     </details>
 
